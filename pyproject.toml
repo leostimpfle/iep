@@ -1,0 +1,10 @@
+[project]
+name = "iep"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "duckdb>=1.5.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["iep*"]
