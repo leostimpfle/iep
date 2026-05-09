@@ -8,3 +8,10 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["iep*"]
+
+[dependency-groups]
+development = [
+    "jupyter-console>=6.6.3",
+    "pytest>=9.0.3",
+    "splink>=4.0.16",
+]

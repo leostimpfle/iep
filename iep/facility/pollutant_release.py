@@ -2,13 +2,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
-from _duckdb import DuckDBPyConnection
-from duckdb import DuckDBPyRelation
+from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_INPUT, PATH_PACKAGE, VERSION
-from iep.io import read_duckdb
-from iep.misc import NA_VALUES, Layout
+from iep.config import PATH_IEP, PATH_PACKAGE
+from iep.io import NA_VALUES, Layout, read_duckdb
 from iep.tables import Cte, CteChain, balance
+from iep.versions import VERSION
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -17,24 +16,12 @@ class PollutantRelease:
     medium: str
 
 
-def load(
-    layout: Layout = "wide",
-    pollutants: list[PollutantRelease] | None = None,
-    sanitise: bool = True,
-    balance_panel: bool = False,
-    deduplicate: bool = True,
-    case_sensitive_id: bool = False,
-    add_national_prtrs: bool = True,
-    interpolate: bool = False,
-    interpolate_target: PollutantRelease = PollutantRelease(
-        pollutant="CO2", medium="AIR"
-    ),
-    interpolate_proxies: list[PollutantRelease] | None = None,
-    reload: bool = False,
-    connection: DuckDBPyConnection = duckdb.default_connection(),
+def _load_raw(
+    reload: bool = False, connection: DuckDBPyConnection = duckdb.default_connection()
 ) -> DuckDBPyRelation:
-    data = read_duckdb(
-        fn=Path(PATH_INPUT, VERSION, "2f_PollutantRelease.xlsx"),
+    table_name: str = "2f_PollutantRelease"
+    return read_duckdb(
+        fn=Path(PATH_IEP, VERSION, f"{table_name}.csv"),
         dtypes={
             "fileId_EPRTR_LCP": "INTEGER",
             "PollutantReleaseId": "INTEGER",
@@ -56,6 +43,25 @@ def load(
         reload=reload,
         connection=connection,
     )
+
+
+def load(
+    layout: Layout = "wide",
+    pollutants: list[PollutantRelease] | None = None,
+    sanitise: bool = True,
+    balance_panel: bool = False,
+    deduplicate: bool = True,
+    case_sensitive_id: bool = False,
+    add_national_prtrs: bool = True,
+    interpolate: bool = False,
+    interpolate_target: PollutantRelease = PollutantRelease(
+        pollutant="CO2", medium="AIR"
+    ),
+    interpolate_proxies: list[PollutantRelease] | None = None,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
+) -> DuckDBPyRelation:
+    data = _load_raw(reload=reload, connection=connection)
     ctes = _process_pollutant_release(
         layout=layout,
         pollutants=pollutants,

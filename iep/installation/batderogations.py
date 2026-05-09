@@ -13,23 +13,19 @@ def load(
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    table_name: str = "2a_ProductionFacilityDetails"
+    table_name: str = "3e_BATDerogations"
     return read_duckdb(
         fn=pathlib.Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
-            "fileId_EUReg": "INTEGER",
-            "fileId_EPRTR_LCP": "INTEGER",
-            "ProductionFacilityDetailsID": "INTEGER",
-            "Facility_INSPIRE_ID": "VARCHAR",
+            "BATDerogationId": "INTEGER",
+            "Installation_INSPIRE_ID": "VARCHAR",
             "reportingYear": "INTEGER",
-            "status": "VARCHAR",
-            "remarks": "VARCHAR",
-            "numberOfOperatingHours": "INTEGER",
-            "numberOfEmployees": "INTEGER",
-            "stackHeightClass": "VARCHAR",
-            "representativeStackHeightM": "INTEGER",
-            "confidentialityReasonCode": "VARCHAR",
-            "confidentialityReasonName": "VARCHAR",
+            "BATDerogationIndicator": "INTEGER",
+            "publicReasonURL": "VARCHAR",
+            "BATAELCode": "VARCHAR",
+            "BATAELName": "VARCHAR",
+            "derogationDurationStartDate": "DATETIME",
+            "derogationDurationEndDate": "DATETIME",
         },
         na_values=NA_VALUES,
         all_varchar="true",

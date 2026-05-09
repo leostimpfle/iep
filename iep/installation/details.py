@@ -13,23 +13,21 @@ def load(
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    table_name: str = "2a_ProductionFacilityDetails"
+    table_name: str = "3a_ProductionInstallationDetails"
     return read_duckdb(
         fn=pathlib.Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
             "fileId_EUReg": "INTEGER",
-            "fileId_EPRTR_LCP": "INTEGER",
-            "ProductionFacilityDetailsID": "INTEGER",
-            "Facility_INSPIRE_ID": "VARCHAR",
+            "ProductionInstallationDetailsID": "INTEGER",
+            "Installation_INSPIRE_ID": "VARCHAR",
             "reportingYear": "INTEGER",
             "status": "VARCHAR",
+            "baselineReportIndicator": "VARCHAR",
+            "publicEmissionMonitoring": "VARCHAR",
+            "publicEmissionMonitoringURL": "VARCHAR",
             "remarks": "VARCHAR",
-            "numberOfOperatingHours": "INTEGER",
-            "numberOfEmployees": "INTEGER",
-            "stackHeightClass": "VARCHAR",
-            "representativeStackHeightM": "INTEGER",
-            "confidentialityReasonCode": "VARCHAR",
-            "confidentialityReasonName": "VARCHAR",
+            "siteVisitNumber": "INTEGER",
+            "siteVisitURL": "VARCHAR",
         },
         na_values=NA_VALUES,
         all_varchar="true",

@@ -4,16 +4,19 @@ import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep
-from iep.config import PATH_INPUT, VERSION
-from iep.io import read_duckdb
-from iep.misc import NA_VALUES
+from iep.config import PATH_IEP
+from iep.io import NA_VALUES, read_duckdb
+from iep.versions import VERSION
 
 
 def load_facility(
-    reload: bool = False, connection: DuckDBPyConnection = duckdb.default_connection()
+    version: str = VERSION,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
+    table_name: str = "2_ProductionFacility"
     data = read_duckdb(
-        fn=Path(PATH_INPUT, VERSION, "2_ProductionFacility.xlsx"),
+        fn=Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
             "fileId_EUReg": "INTEGER",
             "Parent_Site_INSPIRE_ID": "VARCHAR",

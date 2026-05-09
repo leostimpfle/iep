@@ -1,4 +1,4 @@
-from pathlib import Path
+import pathlib
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
@@ -13,14 +13,18 @@ def load(
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    table_name: str = "2c_Function"
+    table_name: str = "3i_StricterPermitConditions"
     return read_duckdb(
-        fn=Path(PATH_IEP, version, f"{table_name}.csv"),
+        fn=pathlib.Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
-            "FunctionId": "INTEGER",
-            "Facility_INSPIRE_ID": "VARCHAR",
-            "NACEMainEconomicActivityCode": "VARCHAR",
-            "NACEMainEconomicActivityName": "VARCHAR",
+            "StricterPermitConditionsID": "INTEGER",
+            "Installation_INSPIRE_ID": "VARCHAR",
+            "reportingYear": "INTEGER",
+            "stricterPermitConditionsIndicator": "INTEGER",
+            "BATAELCode": "VARCHAR",
+            "BATAELName": "VARCHAR",
+            "Article14(4)": "INTEGER",
+            "Article18": "INTEGER",
         },
         na_values=NA_VALUES,
         all_varchar="true",
