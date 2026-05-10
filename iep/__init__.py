@@ -1,3 +1,3 @@
-from iep import facility
+from iep import facility, identifiers, installation, part
 
-__all__ = ["facility"]
+__all__ = ["identifiers", "facility", "installation", "part"]

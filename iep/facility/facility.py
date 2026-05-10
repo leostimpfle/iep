@@ -46,7 +46,7 @@ def load_facility(
             "RBDSourceName": "VARCHAR",
             "NUTSRegionSourceCode": "VARCHAR",
             "NUTSRegionSourceName": "VARCHAR",
-            "dateOfStartOfOperation": "DATE_EXCEL",
+            "dateOfStartOfOperation": "DATETIME",
         },
         na_values=NA_VALUES,
         all_varchar=True,
