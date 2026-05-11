@@ -234,3 +234,28 @@ def load_facility(
         how="left",
     )
     return data
+
+
+def load_activity(
+    version: str = _VERSION,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
+) -> DuckDBPyRelation:
+    table_name: str = "ACTIVITY"
+    return read_duckdb(
+        fn=Path(PATH_EPRTR, f"E-PRTR_database_{version}", f"{table_name}.csv"),
+        dtypes={
+            "ActivityID": "INTEGER",
+            "FacilityReportID": "INTEGER",
+            "FacilityReportName": "VARCHAR",
+            "AnnexIActivityCode": "VARCHAR",
+            "AnnexIActivityName": "VARCHAR",
+            "AnnexIActivityIPPCCode": "VARCHAR",
+            "RankingNumeric": "INTEGER",
+            "MainActivityIndicator": "INTEGER",
+        },
+        na_values=NA_VALUES,
+        all_varchar=True,
+        reload=reload,
+        connection=connection,
+    )

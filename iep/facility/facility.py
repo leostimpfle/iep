@@ -3,13 +3,13 @@ from pathlib import Path
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-import iep
-from iep.config import PATH_IEP
+from iep.config import PATH_IEP, PATH_PACKAGE
+from iep.identifiers import Level, _deduplicate
 from iep.io import NA_VALUES, read_duckdb
-from iep.versions import VERSION
+from iep.versions import VERSION, stack_versions
 
 
-def load_facility(
+def _load_raw(
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -56,34 +56,52 @@ def load_facility(
     return data
 
 
+def _add_eprtr(
+    data: DuckDBPyRelation,
+    connection: DuckDBPyConnection,
+    reload: bool = False,
+) -> DuckDBPyRelation:
+    from iep.eprtr import load_facility
+
+    eprtr = (
+        load_facility(reload=reload, connection=connection)
+        .join(
+            connection.read_csv(
+                Path(PATH_PACKAGE, "facility", "links-eprtr.csv")
+            ).aggregate(
+                "FacilityID, FIRST(Facility_INSPIRE_ID ORDER BY match_weight DESC) AS Facility_INSPIRE_ID"
+            ),
+            condition="FacilityID",
+            how="inner",
+        )
+        .select(
+            "Facility_INSPIRE_ID, ReportingYear AS reportingYear, ParentCompanyName AS parentCompanyName, FacilityName AS nameOfFeature"
+        )
+    )
+    connection.register("eprtr", eprtr)
+    data = connection.sql(
+        """
+        SELECT * FROM data
+        UNION BY NAME
+        SELECT * FROM eprtr
+        WHERE (Facility_INSPIRE_ID, reportingYear) NOT IN (
+            SELECT Facility_INSPIRE_ID, reportingYear FROM data
+        )
+        """
+    ).select(
+        f"""Facility_INSPIRE_ID,
+        reportingYear,
+        {", ".join(f"COALESCE({c}, FIRST({c} IGNORE NULLS) OVER (PARTITION BY Facility_INSPIRE_ID ORDER BY reportingYear DESC)) AS {c}" for c in data.columns if not c in ["Facility_INSPIRE_ID", "reportingYear"])}
+        """
+    )
+    return data
+
+
 def load(
-    add_function: bool = True,
-    add_years_functional: bool = True,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    data = load_facility(reload=reload, connection=connection)
-    if add_function:
-        function = iep.facility.function.load(
-            reload=reload, connection=connection
-        ).aggregate(
-            "Facility_INSPIRE_ID, FIRST(NACEMainEconomicActivityCode) AS NACEMainEconomicActivityCode"
-        )
-        data = data.join(
-            function,
-            condition="Facility_INSPIRE_ID",
-            how="left",
-        )
-    if add_years_functional:
-        last_year = (
-            iep.facility.details.load(reload=reload, connection=connection)
-            .filter("status IN ('functional', 'notRegulated')")
-            .aggregate(
-                aggr_expr='"Facility_INSPIRE_ID", MAX("reportingYear") AS last_year_functional',
-                group_expr='"Facility_INSPIRE_ID"',
-            )
-        )
-        data = data.select(
-            '*, YEAR("dateOfStartOfOperation") AS first_year_functional'
-        ).join(last_year, condition="Facility_INSPIRE_ID", how="left")
+    data = stack_versions(loader=_load_raw, reload=reload, connection=connection)
+    data = _add_eprtr(data=data, connection=connection, reload=reload)
+    data = _deduplicate(data=data, connection=connection, level=Level.Facility)
     return data

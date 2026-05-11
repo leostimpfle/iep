@@ -1,4 +1,6 @@
+from pathlib import Path
 from textwrap import dedent
+from typing import Final
 
 import duckdb
 import splink
@@ -8,14 +10,15 @@ import splink.comparison_library as cl
 from _duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep
+from iep.config import PATH_PACKAGE
 from iep.eprtr import load_facility as load_eprtr_facility
 from iep.eprtr import load_pollutantrelease as load_eprtr_pollutantrelease
 from iep.versions import VERSION
 
-_START_YEAR = 2007
-_END_YEAR = 2017
-_POLLUTANTS = [("AIR", "CO2"), ("AIR", "NOX")]
-_N = (_END_YEAR - _START_YEAR + 1) * len(_POLLUTANTS)
+_START_YEAR: Final[int] = 2007
+_END_YEAR: Final[int] = 2017
+_POLLUTANTS: Final[list[tuple[str, str]]] = [("AIR", "CO2"), ("AIR", "NOX")]
+_N: Final[int] = (_END_YEAR - _START_YEAR + 1) * len(_POLLUTANTS)
 
 
 def clean(column: str, remove: list[str] | None = None) -> str:
@@ -34,7 +37,6 @@ def standardise() -> str:
         f"""
         facility_id,
         countryCode,
-        mainActivityCode,
         pointGeometryLat,
         pointGeometryLon,
         {clean("parentCompanyName", remove=["city"])},
@@ -51,7 +53,7 @@ def _load_iep(
     connection: DuckDBPyConnection = duckdb.default_connection(),
     version: str = VERSION,
 ) -> DuckDBPyRelation:
-    facilities = iep.facility.facility.load_facility(
+    facilities = iep.facility.facility._load_raw(
         version=version, connection=connection
     ).select("*, Facility_INSPIRE_ID AS facility_id")
     pollutants = (
@@ -205,6 +207,7 @@ settings = splink.SettingsCreator(
                 cll.ElseLevel(),
             ],
         ),
+        cl.ExactMatch("mainActivityCode").configure(term_frequency_adjustments=True),
         cl.CustomComparison(
             output_column_name="Releases",
             comparison_levels=[
@@ -255,16 +258,26 @@ for rule in [
         blocking_rule=rule,
     )
 
-linker.visualisations.match_weights_chart().save(  # ty:ignore[unresolved-attribute]
-    r"/Users/leonardstimpfle/Downloads/link-iep-eprtr.html"
+
+prediction = linker.inference.predict(threshold_match_probability=0.95)
+prediction.as_duckdbpyrelation().aggregate(
+    """facility_id_l AS Facility_INSPIRE_ID,
+    FIRST(facility_id_r ORDER BY match_weight DESC) AS FacilityID,
+    FIRST(match_weight ORDER BY match_weight DESC) AS match_weight,
+    FIRST(match_probability ORDER BY match_weight DESC) AS match_probability
+    """
+).order("Facility_INSPIRE_ID").to_csv(
+    Path(PATH_PACKAGE, "facility", "links-eprtr.csv").as_posix()
 )
-prediction = linker.inference.predict()
+
+# %% evaluation
+linker.visualisations.match_weights_chart()
+fid = "https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/arb-2017-978024-900-9103527"
+fid = "https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100125"
 filtered = (
     prediction.as_duckdbpyrelation()
     # .filter(f"Facility_INSPIRE_ID_l IN {fids}")
-    .filter(
-        f"facility_id_l = 'https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100125'"
-    )
+    .filter(f"facility_id_l = '{fid}'")
     .order("match_probability DESC")
     .df()
     .to_dict("records")
