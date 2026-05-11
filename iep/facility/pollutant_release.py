@@ -4,7 +4,8 @@ from pathlib import Path
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_IEP, PATH_PACKAGE
+from iep.config import PATH_IEP
+from iep.identifiers import Level, _deduplicate
 from iep.io import NA_VALUES, Layout, read_duckdb
 from iep.tables import Cte, CteChain, balance
 from iep.versions import VERSION
@@ -17,11 +18,13 @@ class PollutantRelease:
 
 
 def _load_raw(
-    reload: bool = False, connection: DuckDBPyConnection = duckdb.default_connection()
+    version: str = VERSION,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
     table_name: str = "2f_PollutantRelease"
     return read_duckdb(
-        fn=Path(PATH_IEP, VERSION, f"{table_name}.csv"),
+        fn=Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
             "fileId_EPRTR_LCP": "INTEGER",
             "PollutantReleaseId": "INTEGER",
@@ -46,28 +49,30 @@ def _load_raw(
 
 
 def load(
-    layout: Layout = "wide",
+    layout: Layout = "long",
     pollutants: list[PollutantRelease] | None = None,
-    sanitise: bool = True,
+    deduplicate: bool = False,
+    sanitise: bool = False,
     balance_panel: bool = False,
-    deduplicate: bool = True,
-    case_sensitive_id: bool = False,
-    add_national_prtrs: bool = True,
+    case_sensitive_id: bool = True,
+    add_national_prtrs: bool = False,
     interpolate: bool = False,
     interpolate_target: PollutantRelease = PollutantRelease(
         pollutant="CO2", medium="AIR"
     ),
     interpolate_proxies: list[PollutantRelease] | None = None,
+    version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    data = _load_raw(reload=reload, connection=connection)
+    data = _load_raw(version=version, reload=reload, connection=connection)
+    if deduplicate:
+        data = _deduplicate(data=data, connection=connection, level=Level.Facility)
     ctes = _process_pollutant_release(
         layout=layout,
         pollutants=pollutants,
         sanitise=sanitise,
         balance_panel=balance_panel,
-        deduplicate=deduplicate,
         case_sensitive_id=case_sensitive_id,
         add_national_prtrs=add_national_prtrs,
         interpolate=interpolate,
@@ -84,7 +89,6 @@ def _process_pollutant_release(
     pollutants: list[PollutantRelease] | None = None,
     sanitise: bool = True,
     balance_panel: bool = False,
-    deduplicate: bool = True,
     case_sensitive_id: bool = False,
     add_national_prtrs: bool = True,
     interpolate: bool = False,
@@ -113,11 +117,6 @@ def _process_pollutant_release(
     #     ctes = _add_national_prtrs(
     #         ctes=ctes, case_sensitive_id=case_sensitive_id, reload=reload
     #     )
-    if deduplicate:
-        ctes = ctes.extend(
-            _deduplicate(alias=ctes.final, case_sensitive_id=case_sensitive_id)
-        )
-
     if pollutants is not None:
         conditions = " OR ".join(
             f"(pollutantCode = '{pollutant.pollutant}' AND medium = '{pollutant.medium}')"
@@ -305,40 +304,40 @@ def _process_pollutant_release(
 #     )
 
 
-def _deduplicate(alias: str, case_sensitive_id: bool) -> CteChain:
-    path = Path(PATH_PACKAGE, "facility", "deduplication.csv")
-    id_expr = (
-        'lower("Facility_INSPIRE_ID")'
-        if not case_sensitive_id
-        else '"Facility_INSPIRE_ID"'
-    )
-    cluster_expr = (
-        'lower("Facility_INSPIRE_ID_cluster")'
-        if not case_sensitive_id
-        else '"Facility_INSPIRE_ID_cluster"'
-    )
-    expect_unique = ["reportingYear", "Facility_INSPIRE_ID", "pollutantCode", "medium"]
-    return CteChain(
-        ctes=(
-            Cte(
-                name="deduplication",
-                query=f"""SELECT
-                    {id_expr} AS "Facility_INSPIRE_ID",
-                    {cluster_expr} AS "Facility_INSPIRE_ID_cluster"
-                FROM read_csv('{path}')""",
-            ),
-            Cte(
-                name="deduplicated",
-                query=f"""SELECT
-                    t.* REPLACE (
-                        COALESCE(d."Facility_INSPIRE_ID_cluster", t."Facility_INSPIRE_ID") AS "Facility_INSPIRE_ID"
-                    )
-                FROM {alias} t
-                LEFT JOIN deduplication d USING ("Facility_INSPIRE_ID")
-                QUALIFY ROW_NUMBER() OVER (PARTITION BY {", ".join(expect_unique)} ) = 1""",  # TODO: fix deduplication and throw error https://github.com/leostimpfle/euets/issues/3
-            ),
-        )
-    )
+# def _deduplicate(alias: str, case_sensitive_id: bool) -> CteChain:
+#     path = Path(PATH_PACKAGE, "facility", "deduplication.csv")
+#     id_expr = (
+#         'lower("Facility_INSPIRE_ID")'
+#         if not case_sensitive_id
+#         else '"Facility_INSPIRE_ID"'
+#     )
+#     cluster_expr = (
+#         'lower("Facility_INSPIRE_ID_cluster")'
+#         if not case_sensitive_id
+#         else '"Facility_INSPIRE_ID_cluster"'
+#     )
+#     expect_unique = ["reportingYear", "Facility_INSPIRE_ID", "pollutantCode", "medium"]
+#     return CteChain(
+#         ctes=(
+#             Cte(
+#                 name="deduplication",
+#                 query=f"""SELECT
+#                     {id_expr} AS "Facility_INSPIRE_ID",
+#                     {cluster_expr} AS "Facility_INSPIRE_ID_cluster"
+#                 FROM read_csv('{path}')""",
+#             ),
+#             Cte(
+#                 name="deduplicated",
+#                 query=f"""SELECT
+#                     t.* REPLACE (
+#                         COALESCE(d."Facility_INSPIRE_ID_cluster", t."Facility_INSPIRE_ID") AS "Facility_INSPIRE_ID"
+#                     )
+#                 FROM {alias} t
+#                 LEFT JOIN deduplication d USING ("Facility_INSPIRE_ID")
+#                 QUALIFY ROW_NUMBER() OVER (PARTITION BY {", ".join(expect_unique)} ) = 1""",  # TODO: fix deduplication and throw error https://github.com/leostimpfle/euets/issues/3
+#             ),
+#         )
+#     )
 
 
 def _fix_unit_errors(

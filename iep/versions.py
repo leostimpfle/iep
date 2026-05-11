@@ -100,16 +100,3 @@ def stack_versions(
         {", ".join(f"LAST({c} ORDER BY {', '.join(order_by)}) AS {c}" for c in aggregate)}"""
     )
     return stacked
-
-
-if __name__ == "__main__":
-    connection = duckdb.connect()
-    facilities = stack_versions(
-        loader=iep.facility.facility.load_facility, reload=False, connection=connection
-    )
-    details = iep.facility.details.load(connection=connection)
-    function = iep.facility.function.load(connection=connection)
-    function = stack_versions(loader=iep.facility.function.load, connection=connection)
-    # details = stack_versions(
-    #     loader=load_facility_details, reload=False, connection=connection
-    # )

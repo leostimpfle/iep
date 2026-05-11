@@ -136,7 +136,7 @@ settings = splink.SettingsCreator(
     ],
 )
 linker = splink.Linker(
-    input_table_or_tables=data,
+    input_table_or_tables=data,  # ty:ignore[invalid-argument-type]
     settings=settings,
     db_api=splink.DuckDBAPI(connection=connection),
 )
@@ -166,7 +166,7 @@ for rule in [
         blocking_rule=rule,
     )
 
-linker.visualisations.match_weights_chart().save(
+linker.visualisations.match_weights_chart().save(  # ty:ignore[unresolved-attribute]
     r"/Users/leonardstimpfle/Downloads/deduplication.html"
 )
 prediction = linker.inference.predict(threshold_match_probability=0.75)

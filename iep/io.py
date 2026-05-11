@@ -41,6 +41,10 @@ def _cast(
     column = f'"{column}"'
     if dtype in ("DATETIME", "TIMESTAMP") and date_format is not None:
         query_column = f"""STRPTIME({column}, '{date_format}')"""
+        query_column = f"""CASE
+            WHEN {query_column} > CURRENT_DATE THEN {query_column} - INTERVAL '100 years'
+            ELSE {query_column}
+        END"""
     else:
         query_column = column
     query = f"""{cast}({query_column} AS {dtype})"""
