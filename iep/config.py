@@ -4,3 +4,4 @@ from typing import Final
 PATH_PACKAGE: Final[Path] = Path(__file__).resolve().parent
 PATH_INPUT: Final[Path] = PATH_PACKAGE.parent / "input"
 PATH_IEP: Final[Path] = PATH_INPUT / "iep"
+PATH_EPRTR: Final[Path] = PATH_INPUT / "eprtr"

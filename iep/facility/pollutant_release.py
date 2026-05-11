@@ -17,11 +17,13 @@ class PollutantRelease:
 
 
 def _load_raw(
-    reload: bool = False, connection: DuckDBPyConnection = duckdb.default_connection()
+    version: str = VERSION,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
     table_name: str = "2f_PollutantRelease"
     return read_duckdb(
-        fn=Path(PATH_IEP, VERSION, f"{table_name}.csv"),
+        fn=Path(PATH_IEP, version, f"{table_name}.csv"),
         dtypes={
             "fileId_EPRTR_LCP": "INTEGER",
             "PollutantReleaseId": "INTEGER",
@@ -46,22 +48,23 @@ def _load_raw(
 
 
 def load(
-    layout: Layout = "wide",
+    layout: Layout = "long",
     pollutants: list[PollutantRelease] | None = None,
-    sanitise: bool = True,
+    sanitise: bool = False,
     balance_panel: bool = False,
-    deduplicate: bool = True,
-    case_sensitive_id: bool = False,
-    add_national_prtrs: bool = True,
+    deduplicate: bool = False,
+    case_sensitive_id: bool = True,
+    add_national_prtrs: bool = False,
     interpolate: bool = False,
     interpolate_target: PollutantRelease = PollutantRelease(
         pollutant="CO2", medium="AIR"
     ),
     interpolate_proxies: list[PollutantRelease] | None = None,
+    version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    data = _load_raw(reload=reload, connection=connection)
+    data = _load_raw(version=version, reload=reload, connection=connection)
     ctes = _process_pollutant_release(
         layout=layout,
         pollutants=pollutants,
