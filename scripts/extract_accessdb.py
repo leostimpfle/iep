@@ -3,6 +3,8 @@
 import subprocess
 from pathlib import Path
 
+from iep.config import PATH_INPUT
+
 
 def extract_tables(database: str | Path, output_dir: str | Path) -> None:
     """Extract all tables from an .accdb or .mdb file as CSVs."""
@@ -25,7 +27,7 @@ def extract_tables(database: str | Path, output_dir: str | Path) -> None:
 
 
 # %% IEP
-input_folder = Path(Path(__file__).parents[1], "input", "iep")
+input_folder = Path(PATH_INPUT, "iep")
 databases = input_folder.glob("*.accdb")
 for database in databases:
     print(database.stem)
@@ -34,7 +36,7 @@ for database in databases:
     extract_tables(database=database, output_dir=output_folder)
 
 # %% E-PRTR
-eprtr = Path(Path(__file__).parents[1], "input", "e-prtr", "E-PRTR_database_v18.mdb")
+eprtr = Path(PATH_INPUT, "e-prtr", "E-PRTR_database_v18.mdb")
 output = Path(eprtr.with_suffix(""))
 output.mkdir(exist_ok=True)
 extract_tables(database=eprtr, output_dir=output)

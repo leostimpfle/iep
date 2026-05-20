@@ -1,6 +1,6 @@
 iep.egg-info
 __pycache__
-input/**
-!input/**/
-!input/**/*.parquet
+iep/_input/**
+!iep/_input/**/
+!iep/_input/**/*.parquet
 .DS_Store
