@@ -3,9 +3,8 @@ import pathlib
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_IEP
-from iep.io import NA_VALUES, read_duckdb
-from iep.versions import VERSION
+from iep.config import NA_VALUES, PATH_IEP, VERSION
+from iep.utils import read_duckdb
 
 
 def load(

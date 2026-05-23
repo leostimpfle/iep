@@ -1,14 +1,14 @@
 from enum import IntEnum
 from pathlib import Path
+from textwrap import dedent
 from typing import Final
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep.facility.facility
-from iep.config import PATH_IEP, PATH_PACKAGE
-from iep.io import NA_VALUES, read_duckdb
-from iep.versions import VERSION
+from iep.config import NA_VALUES, PATH_IEP, PATH_PACKAGE, VERSION
+from iep.utils import CteQueue, read_duckdb
 
 
 class Level(IntEnum):
@@ -92,24 +92,32 @@ def load(
     return data
 
 
-def _deduplicate(
-    data: DuckDBPyRelation, connection: DuckDBPyConnection, level: Level
-) -> DuckDBPyRelation:
-    deduplication = connection.read_csv(
-        Path(PATH_PACKAGE, level.name.lower(), "deduplication.csv")
-    )
-    data = data.join(
-        deduplication.select(
-            f"{level.name}_INSPIRE_ID_cluster, {level.name}_INSPIRE_ID"
+def deduplicate(data: CteQueue, level: Level) -> CteQueue:
+    input_name: str = data.final
+    data = data.extend(
+        name="_deduplication",
+        query=dedent(
+            f"""SELECT DISTINCT
+                {level.name}_INSPIRE_ID_cluster,
+                {level.name}_INSPIRE_ID
+            FROM read_csv('{Path(PATH_PACKAGE, level.name.lower(), "deduplication.csv")}')
+            """
         ),
-        condition=f"{level.name}_INSPIRE_ID",
-        how="left",
-    ).select(
-        f"""*
-        EXCLUDE(
-            {level.name}_INSPIRE_ID_cluster
-        ) REPLACE(
-            COALESCE({level.name}_INSPIRE_ID_cluster, {level.name}_INSPIRE_ID) AS {level.name}_INSPIRE_ID
-        )"""
+    )
+    data = data.extend(
+        name=f"_deduplication_{input_name}",
+        query=dedent(
+            f"""SELECT
+                l.* REPLACE(
+                    COALESCE(
+                        r.{level.name}_INSPIRE_ID_cluster,
+                        l.{level.name}_INSPIRE_ID
+                    ) AS {level.name}_INSPIRE_ID
+                )
+            FROM {input_name} l
+            LEFT JOIN _deduplication r
+            USING ({level.name}_INSPIRE_ID)
+            """
+        ),
     )
     return data

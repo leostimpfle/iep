@@ -10,10 +10,9 @@ import splink.comparison_library as cl
 from _duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep
-from iep.config import PATH_PACKAGE
-from iep.eprtr import load_facility as load_eprtr_facility
-from iep.eprtr import load_pollutantrelease as load_eprtr_pollutantrelease
-from iep.versions import VERSION
+from iep._eprtr import load_facility as load_eprtr_facility
+from iep._eprtr import load_pollutantrelease as load_eprtr_pollutantrelease
+from iep.config import PATH_PACKAGE, VERSION
 
 _START_YEAR: Final[int] = 2007
 _END_YEAR: Final[int] = 2017

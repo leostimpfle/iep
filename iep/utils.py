@@ -1,28 +1,88 @@
+from collections import Counter
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from pathlib import Path
-from typing import Final, Literal
+from textwrap import dedent
+from typing import Literal
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-type Layout = Literal["wide", "long"]
 
-NA_VALUES: Final[list[str | int | float]] = [
-    "CONFIDENTIAL",
-    "None",
-    "none specified",
-    "does not exist",
-    "UNNAMED ROAD",
-    "n.a.",
-    "_",
-    "-",
-    "--",
-    "x",
-    "01/00/00 00:00:00",
-    "01/01/00 00:00:00",
-    "12/31/99 00:00:00",
-    "01/02/00 00:00:00",
-]
+@dataclass(kw_only=True, frozen=True, slots=True)
+class Cte:
+    name: str
+    query: str
+
+    def to_sql(self) -> str:
+        return f"{self.name} AS ({self.query})"
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class CteQueue:
+    ctes: tuple[Cte, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        duplicates = {
+            cte_name
+            for cte_name, count in Counter(cte.name for cte in self.ctes).items()
+            if count > 1
+        }
+        if duplicates:
+            raise ValueError(f"Duplicate CTE names: {duplicates}")
+
+    def extend(self, name: str, query: str) -> "CteQueue":
+        return CteQueue(ctes=self.ctes + (Cte(name=name, query=query),))
+
+    @property
+    def n(self) -> int:
+        return len(self.ctes)
+
+    @property
+    def final(self) -> str:
+        return self.ctes[-1].name
+
+    def to_sql(self, recursive: bool = False) -> str:
+        keyword = "WITH RECURSIVE" if recursive else "WITH"
+        return f"{keyword} {', '.join(cte.to_sql() for cte in self.ctes)} SELECT * FROM {self.final}"
+
+
+def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
+    input_name = data.final
+    prefix: str = "_balance"
+    data = data.extend(
+        name=f"{prefix}_identifiers",
+        query=dedent(f"""SELECT DISTINCT {", ".join(groups)} FROM {input_name}"""),
+    )
+    data = data.extend(
+        name=f"{prefix}_periods",
+        query=dedent(
+            f"""SELECT
+                unnest(
+                    generate_series(
+                        (SELECT MIN("{time}") FROM base),
+                        (SELECT MAX("{time}") FROM base)
+                    )
+                ) AS "{time}"
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_balanced",
+        query=dedent(
+            f"""SELECT
+                i.*, 
+                p.*,
+                b.* EXCLUDE({", ".join(groups)}, "{time}")
+            FROM {prefix}_identifiers AS i
+            CROSS JOIN {prefix}_periods AS p
+            LEFT JOIN {input_name} b
+            ON {" AND ".join(f"b.{c} = i.{c}" for c in groups)}
+            AND b."{time}" = p."{time}"
+            """
+        ),
+    )
+    return data
 
 
 class DuckDBReader(StrEnum):

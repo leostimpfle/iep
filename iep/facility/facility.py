@@ -3,10 +3,10 @@ from pathlib import Path
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_IEP, PATH_PACKAGE
-from iep.identifiers import Level, _deduplicate
-from iep.io import NA_VALUES, read_duckdb
-from iep.versions import VERSION, stack_versions
+from iep.config import NA_VALUES, PATH_IEP, PATH_PACKAGE, VERSION
+from iep.identifiers import Level, deduplicate
+from iep.utils import Cte, CteQueue, read_duckdb
+from iep.versions import stack_versions
 
 
 def _load_raw(
@@ -61,7 +61,7 @@ def _add_eprtr(
     connection: DuckDBPyConnection,
     reload: bool = False,
 ) -> DuckDBPyRelation:
-    from iep.eprtr import load_facility
+    from iep._eprtr import load_facility
 
     eprtr = (
         load_facility(reload=reload, connection=connection)
@@ -103,5 +103,8 @@ def load(
 ) -> DuckDBPyRelation:
     data = stack_versions(loader=_load_raw, reload=reload, connection=connection)
     data = _add_eprtr(data=data, connection=connection, reload=reload)
-    data = _deduplicate(data=data, connection=connection, level=Level.Facility)
-    return data
+    data = deduplicate(
+        data=CteQueue(ctes=(Cte(name="_raw", query=data.sql_query()),)),
+        level=Level.Facility,
+    )
+    return connection.sql(data.to_sql())

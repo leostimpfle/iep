@@ -3,11 +3,10 @@ from pathlib import Path
 from typing import Final, Protocol
 
 import duckdb
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from _duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-import iep
-from iep.config import PATH_IEP
-from iep.io import read_duckdb
+from iep.config import PATH_IEP, VERSION
+from iep.utils import read_duckdb
 
 _METADATA_NAME: Final[str] = "_VERSION_METADATA"
 
@@ -20,9 +19,6 @@ class Loader(Protocol):
         reload: bool,
         connection: DuckDBPyConnection,
     ) -> DuckDBPyRelation: ...
-
-
-VERSION: Final[str] = "Industrial_dataset_v_16_2026_02_16"
 
 
 def load_metadata(
