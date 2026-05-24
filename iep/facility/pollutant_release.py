@@ -6,9 +6,9 @@ import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep.utils
+from iep import utils
 from iep.config import NA_VALUES, PATH_IEP, VERSION
-from iep.identifiers import Level
-from iep.utils import CteQueue, read_duckdb
+from iep.utils import CteQueue, Level, read_duckdb, sanitise_units
 
 _POLLUTANT_RELEASE: Final[str] = "totalPollutantQuantityKg"
 
@@ -61,7 +61,7 @@ def load(
         ).sql_query(),
     )
     if deduplicate:
-        data = iep.identifiers.deduplicate(data=data, level=Level.Facility)
+        data = utils.deduplicate(data=data, level=Level.Facility)
     if balance:
         data = iep.utils.balance(
             data=data,
@@ -81,7 +81,12 @@ def _sanitise(data: CteQueue) -> CteQueue:
         query=f"SELECT * FROM {data.final} WHERE pollutantCode NOT NULL AND medium NOT NULL",
     )
     data = _sanitise_biomassco2(data=data)
-    data = _sanitise_units(data=data)
+    data = sanitise_units(
+        data=data,
+        value="totalPollutantQuantityKg",
+        time="reportingYear",
+        groups=["Facility_INSPIRE_ID", "pollutantCode", "medium"],
+    )
     return data
 
 
@@ -156,95 +161,6 @@ def _sanitise_biomassco2(data: CteQueue, threshold: float = 0.3) -> CteQueue:
            FROM {input_name} t
            LEFT JOIN {prefix}_errors USING (reportingYear, Facility_INSPIRE_ID)
            """
-        ),
-    )
-    return data
-
-
-def _sanitise_units(
-    data: CteQueue, threshold: int = 1_000, permissible_range: float = 0.5
-) -> CteQueue:
-    """Correct probable unit errors by rescaling outlier emissions.
-
-    A unit error (e.g. kg entered as g or tonnes) is identified as a spike
-    that reverts the following year:
-        - log-change exceeds `threshold`
-        - reversed in the next year
-        - rescaled value falls within `permissible_range` of the facility's overall emissions
-    """
-    input_name: str = data.final
-    prefix: str = "_sanitise_units"
-    data = data.extend(
-        name=f"{prefix}_base",
-        query=dedent(
-            f"""SELECT
-                reportingYear,
-                Facility_INSPIRE_ID,
-                pollutantCode,
-                medium,
-                FIRST({_POLLUTANT_RELEASE}) AS emissions
-            FROM {input_name} 
-            GROUP BY ALL
-            """
-        ),
-    )
-    data = data.extend(
-        name=f"{prefix}_stats",
-        query=dedent(
-            f"""SELECT
-                *,
-                MIN(emissions) OVER w AS _min,
-                MAX(emissions) OVER w AS _max,
-                LAG(emissions) OVER w AS emissions_lagged,
-                emissions > 0 AND emissions_lagged > 0 AS valid,
-                CASE
-                    WHEN COALESCE(valid, FALSE) 
-                    THEN LOG10(emissions / emissions_lagged)
-                END AS log_change,
-                CASE
-                    WHEN COALESCE(valid, FALSE)
-                    THEN ROUND(LOG10(emissions))::BIGINT
-                END AS order_of_magnitude
-            FROM {prefix}_base
-            WINDOW w AS (
-                PARTITION BY Facility_INSPIRE_ID, pollutantCode, medium
-                ORDER BY reportingYear
-            )
-            """
-        ),
-    )
-    data = data.extend(
-        name=f"{prefix}_scalar",
-        query=dedent(
-            f"""SELECT
-                *,
-                POW(10, order_of_magnitude - LEAD(order_of_magnitude) OVER w)::DOUBLE AS scalar 
-            FROM {prefix}_stats 
-            WINDOW w AS (
-                PARTITION BY Facility_INSPIRE_ID, pollutantCode, medium
-                ORDER BY reportingYear
-            )
-            QUALIFY
-                -- only adjust if change reverts in following year
-                ABS(log_change) > log10({threshold})
-                AND ABS(LEAD(log_change) OVER w) > log10({threshold})
-                AND SIGN(log_change) != SIGN(LEAD(log_change) OVER w)
-                -- require that scaled emissions are within permissible range
-                AND emissions / POW(10, order_of_magnitude - LEAD(order_of_magnitude) OVER w) 
-                    BETWEEN _min * (1 - {permissible_range}) AND _max * (1 + {permissible_range})
-            """
-        ),
-    )
-    data = data.extend(
-        name=f"{prefix}_{input_name}",
-        query=dedent(
-            f"""SELECT
-                t.* REPLACE(
-                    t.{_POLLUTANT_RELEASE} / COALESCE(s.scalar, 1) AS {_POLLUTANT_RELEASE}
-                )
-            FROM {input_name} t
-            LEFT JOIN {prefix}_scalar s
-            USING (Facility_INSPIRE_ID, pollutantCode, medium, reportingYear)"""
         ),
     )
     return data

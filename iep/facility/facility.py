@@ -4,8 +4,7 @@ import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 from iep.config import NA_VALUES, PATH_IEP, PATH_PACKAGE, VERSION
-from iep.identifiers import Level, deduplicate
-from iep.utils import Cte, CteQueue, read_duckdb
+from iep.utils import Cte, CteQueue, Level, deduplicate, read_duckdb
 from iep.versions import stack_versions
 
 

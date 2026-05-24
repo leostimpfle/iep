@@ -15,7 +15,9 @@ module-root = ""
 
 [dependency-groups]
 development = [
+    "altair>=6.1.0",
     "jupyter-console>=6.6.3",
+    "pyarrow>=24.0.0",
     "pytest>=9.0.3",
     "splink>=4.0.16",
 ]

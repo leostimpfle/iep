@@ -3,11 +3,12 @@ import pathlib
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
+import iep
 from iep.config import NA_VALUES, PATH_IEP, VERSION
-from iep.utils import read_duckdb
+from iep.utils import CteQueue, read_duckdb
 
 
-def load(
+def _load_raw(
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -31,3 +32,43 @@ def load(
         reload=reload,
         connection=connection,
     )
+
+
+def load(
+    balance: bool = False,
+    sanitise: bool = False,
+    version: str = VERSION,
+    reload: bool = False,
+    connection: DuckDBPyConnection = duckdb.default_connection(),
+) -> DuckDBPyRelation:
+    data = CteQueue()
+    data = data.extend(
+        name="_raw",
+        query=_load_raw(
+            version=version, reload=reload, connection=connection
+        ).sql_query(),
+    )
+    if balance:
+        data = iep.utils.balance(
+            data=data,
+            time="reportingYear",
+            groups=["Installation_Part_Inspire_ID", "pollutantCode"],
+        )
+    if sanitise:
+        data = _sanitise(data=data)
+
+    return connection.sql(data.to_sql())
+
+
+def _sanitise(data: CteQueue) -> CteQueue:
+    data = iep.utils.sanitise_units(
+        data=data,
+        value="totalPollutantQuantityTNE",
+        time="reportingYear",
+        groups=["Installation_Part_Inspire_ID", "pollutantCode"],
+    )
+    return data
+
+
+if __name__ == "__main__":
+    load(balance=True, sanitise=True)
