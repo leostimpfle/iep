@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Final
 
@@ -24,3 +25,7 @@ NA_VALUES: Final[list[str | int | float]] = [
     "12/31/99 00:00:00",
     "01/02/00 00:00:00",
 ]
+
+# Almost a factor of 1_000 do catch obvious misreporting of kg as tonnes or grams
+THRESHOLD_UNIT_ERROR: Final[float] = math.log10(900)
+THRESHOLD_RANGE: Final[float] = 0.5

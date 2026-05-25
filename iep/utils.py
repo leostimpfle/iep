@@ -1,3 +1,4 @@
+import hashlib
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
@@ -84,6 +85,10 @@ class Cte:
     def to_sql(self) -> str:
         return f"{self.name} AS ({self.query})"
 
+    def to_queue(self) -> CteQueue:
+        queue = CteQueue()
+        return queue.extend(name=self.name, query=self.query)
+
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class CteQueue:
@@ -109,16 +114,25 @@ class CteQueue:
     def final(self) -> str:
         return self.ctes[-1].name
 
+    @property
+    def hash(self) -> str:
+        hash = hashlib.sha256(self.query.encode()).hexdigest()[:8]
+        return f"__{hash}"
+
+    @property
+    def query(self) -> str:
+        return ", ".join(cte.to_sql() for cte in self.ctes)
+
     def to_sql(self, recursive: bool = False, table: str | None = None) -> str:
         keyword = "WITH RECURSIVE" if recursive else "WITH"
         if table is None:
             table = self.final
-        return f"{keyword} {', '.join(cte.to_sql() for cte in self.ctes)} SELECT * FROM {table}"
+        return f"{keyword} {self.query} SELECT * FROM {table}"
 
 
 def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
     input_name = data.final
-    prefix: str = "_balance"
+    prefix: str = data.hash
     data = data.extend(
         name=f"{prefix}_identifiers",
         query=dedent(f"""SELECT DISTINCT {", ".join(groups)} FROM {input_name}"""),
@@ -154,13 +168,50 @@ def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
     return data
 
 
+def is_jump(
+    table: str,
+    time: str,
+    identifiers: list[str],
+    value: str,
+    threshold_delta: float,
+    threshold_range: float,
+) -> str:
+    return dedent(
+        f"""SELECT
+            *,
+            MIN({value}) OVER w_unordered AS _min,
+            MAX({value}) OVER w_unordered AS _max, 
+            LAG({value}) OVER w_ordered AS _lag,
+            LEAD({value}) OVER w_ordered AS _lead,
+            CASE
+                WHEN {value} > 0.0 AND _lag > 0.0 THEN LOG10({value} / _lag)
+            END AS _delta,
+            CASE
+                WHEN {value} > 0.0 AND _lead > 0.0 THEN LOG10(_lead / {value})
+            END AS _delta_lead,
+            NULLIF(ROUND(_delta), 0) AS scalar,
+            scalar IS NOT NULL
+                AND _delta IS NOT NULL AND ABS(_delta) > {threshold_delta}
+                AND _delta_lead IS NOT NULL AND ABS(_delta_lead) > {threshold_delta}
+                AND SIGN(_delta) != SIGN(_delta_lead)
+                AND {value} / POW(10, scalar) 
+                    BETWEEN _min * (1 - {threshold_range}) AND _max * (1 + {threshold_range}) 
+            AS error
+        FROM {table} 
+        WINDOW
+            w_unordered AS (PARTITION BY {", ".join(identifiers)}),
+            w_ordered AS (PARTITION BY {", ".join(identifiers)} ORDER BY {time})
+        """
+    )
+
+
 def sanitise_units(
     data: CteQueue,
     value: str,
     time: str,
-    groups: Iterable[str],
-    threshold: int = 800,
-    permissible_range: float = 0.5,
+    groups: list[str],
+    threshold_delta: float,
+    threshold_range: float,
 ) -> CteQueue:
     """Correct probable unit errors by rescaling outlier emissions.
 
@@ -170,80 +221,34 @@ def sanitise_units(
         - reversed in the next year
         - rescaled value falls within `permissible_range` of the facility's overall emissions
     """
-    input_name: str = data.final
-    prefix: str = "_sanitise_units"
-    data = data.extend(
-        name=f"{prefix}_base",
-        query=dedent(
-            f"""SELECT
-                {time},
-                {", ".join(groups)},
-                FIRST({value}) AS val 
-            FROM {input_name} 
-            GROUP BY ALL
-            """
-        ),
-    )
-    data = data.extend(
-        name=f"{prefix}_stats",
-        query=dedent(
-            f"""SELECT
-                *,
-                MIN(val) OVER w  AS _min,
-                MAX(val) OVER w AS _max,
-                LAG(val) OVER w_ordered AS lagged,
-                val > 0 AND lagged > 0 AS valid,
-                CASE
-                    WHEN COALESCE(valid, FALSE) 
-                    THEN LOG10(val / lagged)
-                END AS log_change,
-                CASE
-                    WHEN COALESCE(valid, FALSE)
-                    THEN ROUND(LOG10(val))::BIGINT
-                END AS order_of_magnitude
-            FROM {prefix}_base
-            WINDOW
-                w AS (PARTITION BY {", ".join(groups)}),
-                w_ordered AS (
-                    PARTITION by {", ".join(groups)} 
-                    ORDER BY {time} 
-                )
-            """
-        ),
-    )
+    input: str = data.final
+    prefix: str = data.hash
     data = data.extend(
         name=f"{prefix}_scalar",
-        query=dedent(
-            f"""SELECT
-                *,
-                POW(10, order_of_magnitude - LEAD(order_of_magnitude) OVER w)::DOUBLE AS scalar 
-            FROM {prefix}_stats 
-            WINDOW w AS (
-                PARTITION BY {", ".join(groups)} 
-                ORDER BY {time} 
-            )
-            QUALIFY
-                -- only large change 
-                ABS(log_change) > log10({threshold})
-                -- only adjust if change reverts in following year
-                AND ABS(LEAD(log_change) OVER w) > log10({threshold})
-                AND SIGN(log_change) != SIGN(LEAD(log_change) OVER w)
-                -- require that scaled emissions are within permissible range
-                AND val / POW(10, order_of_magnitude - LEAD(order_of_magnitude) OVER w) 
-                    BETWEEN _min * (1 - {permissible_range}) AND _max * (1 + {permissible_range})
-            """
+        query=is_jump(
+            table=input,
+            time=time,
+            identifiers=groups,
+            value=value,
+            threshold_delta=threshold_delta,
+            threshold_range=threshold_range,
         ),
     )
     data = data.extend(
-        name=f"{prefix}_{input_name}",
+        name=f"{prefix}_sanitised_units",
         query=dedent(
             f"""SELECT
                 t.* REPLACE(
-                    t.{value} / COALESCE(s.scalar, 1) AS {value}
+                    CASE
+                        WHEN s.error THEN t.{value} / POW(10, s.scalar)
+                        ELSE t.{value}
+                    END AS {value}
                 )
-            FROM {input_name} t
+            FROM {input} t
             LEFT JOIN {prefix}_scalar s
-            ON {" AND ".join(f"t.{c} IS NOT DISTINCT FROM s.{c}" for c in groups)} AND t.{time} = s.{time}"""
+            ON {" AND ".join(f"t.{c} IS NOT DISTINCT FROM s.{c}" for c in groups)}
+            AND t.{time} = s.{time}
+            """
         ),
     )
     return data

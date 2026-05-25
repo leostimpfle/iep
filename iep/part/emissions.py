@@ -1,10 +1,17 @@
+import math
 import pathlib
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-import iep
-from iep.config import NA_VALUES, PATH_IEP, VERSION
+import iep.utils
+from iep.config import (
+    NA_VALUES,
+    PATH_IEP,
+    THRESHOLD_RANGE,
+    THRESHOLD_UNIT_ERROR,
+    VERSION,
+)
 from iep.utils import CteQueue, read_duckdb
 
 
@@ -66,9 +73,7 @@ def _sanitise(data: CteQueue) -> CteQueue:
         value="totalPollutantQuantityTNE",
         time="reportingYear",
         groups=["Installation_Part_Inspire_ID", "pollutantCode"],
+        threshold_delta=THRESHOLD_UNIT_ERROR,
+        threshold_range=THRESHOLD_RANGE,
     )
     return data
-
-
-if __name__ == "__main__":
-    load(balance=True, sanitise=True)
