@@ -1,3 +1,4 @@
+import math
 import pathlib
 
 import duckdb
@@ -66,9 +67,6 @@ def _sanitise(data: CteQueue) -> CteQueue:
         value="totalPollutantQuantityTNE",
         time="reportingYear",
         groups=["Installation_Part_Inspire_ID", "pollutantCode"],
+        threshold=math.log10(900),  # almost a factor of 1_000 (t - kg - g)
     )
     return data
-
-
-if __name__ == "__main__":
-    load(balance=True, sanitise=True)
