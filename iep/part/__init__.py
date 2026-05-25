@@ -3,7 +3,7 @@ from iep.part import (
     desulphurisation,
     details,
     emissions,
-    energyinput,
+    energy_input,
     part,
 )
 
@@ -12,6 +12,6 @@ __all__ = [
     "desulphurisation",
     "details",
     "emissions",
-    "energyinput",
+    "energy_input",
     "part",
 ]

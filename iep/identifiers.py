@@ -1,4 +1,3 @@
-from enum import IntEnum
 from pathlib import Path
 from typing import Final
 
@@ -6,16 +5,8 @@ import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep.facility.facility
-from iep.config import PATH_IEP, PATH_PACKAGE
-from iep.io import NA_VALUES, read_duckdb
-from iep.versions import VERSION
-
-
-class Level(IntEnum):
-    Site = 1
-    Facility = 2
-    Installation = 3
-    Installation_Part = 4
+from iep.config import NA_VALUES, PATH_IEP, VERSION
+from iep.utils import Level, read_duckdb
 
 
 def _get_columns(level: Level, include_name: bool = True) -> list[str]:
@@ -89,27 +80,4 @@ def load(
         )
     if not case_sensitive:
         data = data.select(f"{', '.join(f'lower({c}) AS {c}' for c in data.columns)}")
-    return data
-
-
-def _deduplicate(
-    data: DuckDBPyRelation, connection: DuckDBPyConnection, level: Level
-) -> DuckDBPyRelation:
-    deduplication = connection.read_csv(
-        Path(PATH_PACKAGE, level.name.lower(), "deduplication.csv")
-    )
-    data = data.join(
-        deduplication.select(
-            f"{level.name}_INSPIRE_ID_cluster, {level.name}_INSPIRE_ID"
-        ),
-        condition=f"{level.name}_INSPIRE_ID",
-        how="left",
-    ).select(
-        f"""*
-        EXCLUDE(
-            {level.name}_INSPIRE_ID_cluster
-        ) REPLACE(
-            COALESCE({level.name}_INSPIRE_ID_cluster, {level.name}_INSPIRE_ID) AS {level.name}_INSPIRE_ID
-        )"""
-    )
     return data

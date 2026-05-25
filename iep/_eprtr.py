@@ -4,8 +4,8 @@ from typing import Final
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_EPRTR
-from iep.io import NA_VALUES, read_duckdb
+from iep.config import NA_VALUES, PATH_EPRTR
+from iep.utils import read_duckdb
 
 _VERSION: Final[str] = "v18"
 
