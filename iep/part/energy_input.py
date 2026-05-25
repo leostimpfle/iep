@@ -1,4 +1,3 @@
-import math
 import pathlib
 from textwrap import dedent
 from typing import Final
@@ -6,8 +5,14 @@ from typing import Final
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-import iep
-from iep.config import NA_VALUES, PATH_IEP, VERSION
+import iep.utils
+from iep.config import (
+    NA_VALUES,
+    PATH_IEP,
+    THRESHOLD_RANGE,
+    THRESHOLD_UNIT_ERROR,
+    VERSION,
+)
 from iep.utils import CteQueue, read_duckdb
 
 _ENERGY_INPUT: Final[str] = "energyInputTJ"
@@ -97,7 +102,8 @@ def _sanitise(data: CteQueue, deduplicate: bool = False) -> CteQueue:
         value=_ENERGY_INPUT,
         time="reportingYear",
         groups=[_ID] + _GROUPS,
-        threshold=math.log10(900),  # almost a factor of 1_000 (t - kg - g)
+        threshold_delta=THRESHOLD_UNIT_ERROR,
+        threshold_range=THRESHOLD_RANGE,
     )
     data = _sanitise_proxy(data=data)
     return data
@@ -157,13 +163,25 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         ),
     )
     data = data.extend(
-        name=f"{prefix}_error",
-        query=iep.utils.is_unit_error(
+        name=f"{prefix}_jump_target",
+        query=iep.utils.is_jump(
+            table=f"{prefix}_target",
+            time=time,
+            identifiers=[identifier],
+            value="target",
+            threshold_delta=0.75,
+            threshold_range=THRESHOLD_RANGE,
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_jump_ratio",
+        query=iep.utils.is_jump(
             table=f"{prefix}_ratio",
             time=time,
             identifiers=[identifier, "proxy_id"],
             value="ratio",
-            threshold_delta=0.75,  # emissions / energy input not expected to jump wildly year-on-year
+            threshold_delta=0.75,
+            threshold_range=THRESHOLD_RANGE,
         ),
     )
     # Check if ratio for any pollutant jumps
@@ -173,9 +191,11 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             f"""SELECT
                 {time},
                 {identifier},
-                MAX(scalar) AS scalar
-            FROM {prefix}_error
-            WHERE error
+                MAX(r.scalar) AS scalar
+            FROM {prefix}_jump_target t
+            LEFT JOIN {prefix}_jump_ratio r 
+            USING ({time}, {identifier})
+            WHERE t.error AND r.error
             GROUP BY ALL
             """
         ),

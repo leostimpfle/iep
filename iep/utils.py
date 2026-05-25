@@ -168,13 +168,13 @@ def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
     return data
 
 
-def is_unit_error(
+def is_jump(
     table: str,
     time: str,
     identifiers: list[str],
     value: str,
-    threshold_delta: float = 0.5,
-    threshold_range: float = 0.5,
+    threshold_delta: float,
+    threshold_range: float,
 ) -> str:
     return dedent(
         f"""SELECT
@@ -210,8 +210,8 @@ def sanitise_units(
     value: str,
     time: str,
     groups: list[str],
-    threshold: float = 0.5,
-    permissible_range: float = 0.5,
+    threshold_delta: float,
+    threshold_range: float,
 ) -> CteQueue:
     """Correct probable unit errors by rescaling outlier emissions.
 
@@ -225,13 +225,13 @@ def sanitise_units(
     prefix: str = data.hash
     data = data.extend(
         name=f"{prefix}_scalar",
-        query=is_unit_error(
+        query=is_jump(
             table=input,
             time=time,
             identifiers=groups,
             value=value,
-            threshold_delta=threshold,
-            threshold_range=permissible_range,
+            threshold_delta=threshold_delta,
+            threshold_range=threshold_range,
         ),
     )
     data = data.extend(
@@ -252,22 +252,6 @@ def sanitise_units(
         ),
     )
     return data
-
-
-# def get_proxy(data: CteQueue, value: str, time: str, groups: list[str]) -> CteQueue:
-#     data = data.extend(
-#         name=data.hash,
-#         query=dedent(
-#             f"""SELECT
-#                 {time},
-#                 HASH({", ".join(groups)}) AS proxy_id,
-#                 SUM({value}) AS proxy_value
-#             FROM {data.final}
-#             GROUP BY ALL
-#             """
-#         ),
-#     )
-#     return data
 
 
 class Level(IntEnum):

@@ -7,9 +7,16 @@ from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep.utils
 from iep import utils
-from iep.config import NA_VALUES, PATH_IEP, VERSION
-from iep.utils import CteQueue, Level, read_duckdb, sanitise_units
+from iep.config import (
+    NA_VALUES,
+    PATH_IEP,
+    THRESHOLD_RANGE,
+    THRESHOLD_UNIT_ERROR,
+    VERSION,
+)
+from iep.utils import Cte, CteQueue, Level, read_duckdb, sanitise_units
 
+_IDENTIFIER: Final[str] = "Facility_INSPIRE_ID"
 _POLLUTANT_RELEASE: Final[str] = "totalPollutantQuantityKg"
 
 
@@ -83,10 +90,13 @@ def _sanitise(data: CteQueue) -> CteQueue:
     data = _sanitise_biomassco2(data=data)
     data = sanitise_units(
         data=data,
-        value="totalPollutantQuantityKg",
+        value=_POLLUTANT_RELEASE,
         time="reportingYear",
-        groups=["Facility_INSPIRE_ID", "pollutantCode", "medium"],
+        groups=[_IDENTIFIER, "pollutantCode", "medium"],
+        threshold_delta=THRESHOLD_UNIT_ERROR,
+        threshold_range=THRESHOLD_RANGE,
     )
+    data = _sanitise_proxy(data=data)
     return data
 
 
@@ -161,6 +171,118 @@ def _sanitise_biomassco2(data: CteQueue, threshold: float = 0.3) -> CteQueue:
            FROM {input_name} t
            LEFT JOIN {prefix}_errors USING (reportingYear, Facility_INSPIRE_ID)
            """
+        ),
+    )
+    return data
+
+
+def _sanitise_proxy(data: CteQueue) -> CteQueue:
+    input_name: str = data.final
+    prefix: str = data.hash
+    time: str = "reportingYear"
+    identifier: str = _IDENTIFIER
+    target: str = _POLLUTANT_RELEASE
+    groups: list[str] = ["pollutantCode", "medium"]
+    proxy: str = _POLLUTANT_RELEASE
+    cte_target = Cte(
+        name=f"{prefix}_target",
+        query=dedent(
+            f"""SELECT
+                {time},
+                {identifier},
+                {", ".join(groups)},
+                SUM({target}) AS target
+            FROM {input_name}
+            WHERE pollutantCode = 'CO2' AND medium = 'AIR'
+            GROUP BY ALL
+            """
+        ),
+    )
+    cte_proxy = Cte(
+        name=f"{prefix}_proxy",
+        query=f"""SELECT
+            {time},
+            {identifier},
+            {", ".join(groups)},
+            SUM({proxy}) AS proxy 
+        FROM {input_name} 
+        WHERE medium = 'AIR' AND pollutantCode IN ('SOX', 'NOX')
+        GROUP BY ALL
+        """,
+    )
+    data = data.extend(name=cte_target.name, query=cte_target.query)
+    data = data.extend(name=cte_proxy.name, query=cte_proxy.query)
+    data = data.extend(
+        name=f"{prefix}_ratio",
+        query=dedent(
+            f"""SELECT
+                t.{time}, 
+                t.{identifier},
+                {", ".join(f"t.{g}" for g in groups)},
+                {", ".join(f"p.{g} AS {g}_proxy" for g in groups)},
+                CASE
+                    WHEN t.target > 0.0 AND p.proxy > 0.0
+                    THEN p.proxy / t.target
+                END AS ratio
+            FROM {cte_target.name} t
+            LEFT JOIN {cte_proxy.name} p
+            USING ({identifier}, {time})
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_jump_target",
+        query=iep.utils.is_jump(
+            table=f"{prefix}_target",
+            time=time,
+            identifiers=[identifier] + groups,
+            value="target",
+            threshold_delta=0.75,
+            threshold_range=THRESHOLD_RANGE,
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_jump_ratio",
+        query=iep.utils.is_jump(
+            table=f"{prefix}_ratio",
+            time=time,
+            identifiers=[identifier] + groups + [f"{g}_proxy" for g in groups],
+            value="ratio",
+            threshold_delta=0.75,
+            threshold_range=THRESHOLD_RANGE,
+        ),
+    )
+    # Check if ratio for any pollutant jumps
+    data = data.extend(
+        name=f"{prefix}_scalar",
+        query=dedent(
+            f"""SELECT
+                t.{time},
+                t.{identifier},
+                {", ".join(f"t.{g}" for g in groups)},
+                MAX(r.scalar) AS scalar
+            FROM {prefix}_jump_target t
+            LEFT JOIN {prefix}_jump_ratio r 
+            USING ({time}, {identifier}, {", ".join(groups)})
+            WHERE t.error AND r.error
+            GROUP BY ALL
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_{input_name}",
+        query=dedent(
+            f"""SELECT
+                t.* REPLACE(
+                    CASE
+                        WHEN e.scalar NOT NULL THEN {target} * POW(10, e.scalar)
+                        ELSE {target}
+                    END AS {target}
+                ) 
+            FROM {input_name} t
+            LEFT JOIN {prefix}_scalar e
+            USING ({time}, {identifier}, {", ".join(groups)})
+            """
         ),
     )
     return data
