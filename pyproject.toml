@@ -14,10 +14,24 @@ build-backend = "uv_build"
 module-root = ""
 
 [dependency-groups]
-development = [
+dev = [
     "altair>=6.1.0",
     "jupyter-console>=6.6.3",
     "pyarrow>=24.0.0",
-    "pytest>=9.0.3",
     "splink>=4.0.16",
+]
+lint = [
+    "ruff>=0.15.14",
+]
+typecheck = [
+    "ty>=0.0.39",
+]
+test = [
+    "pytest>=9.0.3",
+]
+development = [
+    { include-group = "dev" },
+    { include-group = "lint" },
+    { include-group = "typecheck" },
+    { include-group = "test" },
 ]

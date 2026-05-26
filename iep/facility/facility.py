@@ -90,7 +90,7 @@ def _add_eprtr(
     ).select(
         f"""Facility_INSPIRE_ID,
         reportingYear,
-        {", ".join(f"COALESCE({c}, FIRST({c} IGNORE NULLS) OVER (PARTITION BY Facility_INSPIRE_ID ORDER BY reportingYear DESC)) AS {c}" for c in data.columns if not c in ["Facility_INSPIRE_ID", "reportingYear"])}
+        {", ".join(f"COALESCE({c}, FIRST({c} IGNORE NULLS) OVER (PARTITION BY Facility_INSPIRE_ID ORDER BY reportingYear DESC)) AS {c}" for c in data.columns if c not in ["Facility_INSPIRE_ID", "reportingYear"])}
         """
     )
     return data
