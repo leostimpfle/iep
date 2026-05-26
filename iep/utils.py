@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from pathlib import Path
 from textwrap import dedent
-from typing import Iterable, Literal
+from typing import Literal, Self
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
@@ -102,6 +102,11 @@ class CteQueue:
         }
         if duplicates:
             raise ValueError(f"Duplicate CTE names: {duplicates}")
+
+    @classmethod
+    def from_query(cls, name: str, query: str) -> "CteQueue":
+        cte = Cte(name=name, query=query)
+        return CteQueue(ctes=(cte,))
 
     def extend(self, name: str, query: str) -> "CteQueue":
         return CteQueue(ctes=self.ctes + (Cte(name=name, query=query),))
