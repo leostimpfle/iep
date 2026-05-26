@@ -49,6 +49,8 @@ def test_sanitise(
         "reportingYear",
         "Installation_Part_INSPIRE_ID",
         "fuelInputCode",
+        "otherSolidFuelCode",
+        "otherGaseousFuelCode",
     ]
     test = (
         raw.select(f"{', '.join(columns)}, energyInputTJ AS raw")
@@ -56,9 +58,13 @@ def test_sanitise(
             sanitised.select(
                 f"{', '.join(columns)}, energyInputTj AS sanitised",
             ),
-            condition=", ".join(columns),
+            condition=" AND ".join(
+                f"{raw.alias}.{c} IS NOT DISTINCT FROM {sanitised.alias}.{c}"
+                for c in columns
+            ),
             how="inner",
         )
+        .select(f"{', '.join(f'{raw.alias}.{c}' for c in columns)}, raw, sanitised")
         .filter(
             f"""Installation_Part_INSPIRE_ID = '{case.installation_part}'
             AND reportingYear = {case.year}
