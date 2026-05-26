@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from pathlib import Path
 from textwrap import dedent
-from typing import Literal, Self
+from typing import Literal
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
