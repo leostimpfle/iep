@@ -11,10 +11,9 @@ from iep.config import (
     NA_VALUES,
     PATH_IEP,
     THRESHOLD_RANGE,
-    THRESHOLD_UNIT_ERROR,
     VERSION,
 )
-from iep.utils import Cte, CteQueue, Level, read_duckdb, sanitise_units
+from iep.utils import Cte, CteQueue, Level, read_duckdb
 
 _IDENTIFIER: Final[str] = "Facility_INSPIRE_ID"
 _POLLUTANT_RELEASE: Final[str] = "totalPollutantQuantityKg"
