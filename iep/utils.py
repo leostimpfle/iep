@@ -173,6 +173,38 @@ def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
     return data
 
 
+def fill(
+    column: str,
+    partition_by: list[str],
+    direction: Literal["back", "forward", "both"] = "both",
+    order_by: list[str] | None = None,
+) -> str:
+    partition = f"PARTITION BY {', '.join(partition_by)}"
+    order = f"ORDER BY {', '.join(order_by)}" if order_by is not None else ""
+    backfill: str = dedent(
+        f"""FIRST_VALUE({column} IGNORE NULLS) OVER (
+            {partition}
+            {order}
+            ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
+        )"""
+    )
+    forwardfill: str = dedent(
+        f"""LAST_VALUE({column} IGNORE NULLS) OVER (
+            {partition}
+            {order}
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )"""
+    )
+    if direction == "both":
+        return dedent(f"""COALESCE({column}, {backfill}, {forwardfill})""")
+    elif direction == "back":
+        return dedent(f"""COALESCE({column}, {backfill})""")
+    elif direction == "forward":
+        return dedent(f"""COALESCE({column}, {forwardfill})""")
+    else:
+        raise ValueError(f"Unknown direction: {direction}")
+
+
 def is_outlier(
     data: CteQueue,
     table: str,

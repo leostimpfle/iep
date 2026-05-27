@@ -55,7 +55,6 @@ def _load_raw(
 
 
 def load(
-    balance: bool = False,
     sanitise: bool = False,
     version: str = VERSION,
     reload: bool = False,
@@ -68,8 +67,8 @@ def load(
             version=version, reload=reload, connection=connection
         ).sql_query(),
     )
-    data = _standardise_fuels(data=data)
-    if balance:
+    if sanitise:
+        data = _standardise_fuels(data=data)
         data = iep.utils.balance(
             data=data,
             time="reportingYear",
@@ -80,24 +79,71 @@ def load(
                 "otherGaseousFuelCode",
             ],
         )
-    if sanitise:
         data = _sanitise(data=data)
     return connection.sql(data.to_sql())
 
 
 def _standardise_fuels(data: CteQueue) -> CteQueue:
+    prefix: str = data.hash
+    partition_by: Final[list[str]] = ["Installation_Part_INSPIRE_ID", "fuelInputCode"]
+    order_by: Final[list[str]] = ["reportingYear"]
     data = data.extend(
-        name=f"{data.hash}_fuel_code",
+        name=f"{prefix}_backfill_details",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    {iep.utils.fill(column="furtherDetails", partition_by=partition_by, order_by=order_by, direction="both")} AS furtherDetails,
+                    {iep.utils.fill(column="otherSolidFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherSolidFuelCode,
+                    {iep.utils.fill(column="otherGaseousFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherGaseousFuelCode
+               )
+            FROM {data.final}
+            """,
+        ),
+    )
+
+    def is_black_liquor(column: str) -> str:
+        strings: list[str] = [
+            "black liquor",
+            "licor negro",
+            "lixívia negra",
+            "ablauge",
+        ]
+        return f"""regexp_matches({column}, '(?i)(?:{"|".join(strings)})')"""
+
+    data = data.extend(
+        name=f"{prefix}_recoded",
         query=dedent(
             f"""SELECT
                 * REPLACE(
                     -- 'Other' not informative; set to NULL
                     NULLIF(otherSolidFuelCode, 'Other') AS otherSolidFuelCode,
-                    NULLIF(otherSolidFuelName, 'Other') AS otherSolidFuelName,
-                    NULLIF(otherGaseousFuelCode, 'Other') AS otherGaseousFuelCode,
-                    NULLIF(otherGaseousFuelName, 'Other') AS otherGaseousFuelName
+                    CASE
+                        WHEN otherGaseousFuelCode = 'Other' THEN NULL
+                        WHEN otherGaseousFuelCode = 'FurnaceGas' THEN 'BlastFurnaceGas'
+                        -- black liquor is biomass
+                        WHEN {is_black_liquor(column="furtherDetails")} THEN 'Biomass' 
+                        WHEN regexp_matches(furtherDetails, '(?i)(?:biogas)') THEN 'Biomass'
+                        ELSE otherGaseousFuelCode
+                    END AS otherGaseousFuelCode,
                 )
-            FROM {data.final}
+            FROM {prefix}_backfill_details
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_enhanced",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    CASE
+                        WHEN otherSolidFuelCode NOT NULL AND otherSolidFuelCode != 'Other'
+                            THEN otherSolidFuelCode
+                        WHEN otherGaseousFuelCode NOT NULL AND  otherGaseousFuelCode != 'Other'
+                            THEN otherGaseousFuelCode
+                        ELSE fuelInputCode
+                    END AS fuelInputCode 
+                )
+            FROM {prefix}_recoded
             """
         ),
     )
@@ -108,11 +154,8 @@ def _standardise_fuels(data: CteQueue) -> CteQueue:
                 Installation_Part_INSPIRE_ID,
                 reportingYear,
                 fuelInputCode,
-                fuelInputName,
                 otherSolidFuelCode,
-                otherSolidFuelName,
                 otherGaseousFuelCode,
-                otherGaseousFuelName,
                 SUM(energyInputTJ) AS energyInputTJ
             FROM {data.final}
             GROUP BY ALL
@@ -341,14 +384,15 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
 
 if __name__ == "__main__":
     raw = _load_raw()
-    sanitised = load(balance=True, sanitise=True)
+    sanitised = load(sanitise=True)
 
     # %%
     import altair
 
     part = "AT.CAED/9008390317877.PART"
-    part = "CZ.CHMI.0047/CZ0047.PART"
-    part = "ES.CAED/002112001.PART"
+    # part = "ES.CAED/002112001.PART"
+    # part = "CZ.CHMI.0047/CZ0047.PART"
+    # part = "ES.CAED/002112001.PART"
     altair.Chart(
         # e.aggregate("reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ")
         raw.filter(

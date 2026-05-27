@@ -1,9 +1,9 @@
 import duckdb
 import pytest
-from duckdb import DuckDBPyConnection, DuckDBPyRelation
+from duckdb import DuckDBPyConnection
 
 import iep.utils
-from iep.utils import Cte, CteQueue
+from iep.utils import CteQueue
 
 
 @pytest.fixture
