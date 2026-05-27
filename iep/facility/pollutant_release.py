@@ -88,14 +88,14 @@ def _sanitise(data: CteQueue) -> CteQueue:
         query=f"SELECT * FROM {data.final} WHERE pollutantCode NOT NULL AND medium NOT NULL",
     )
     data = _sanitise_biomassco2(data=data)
-    data = sanitise_units(
-        data=data,
-        value=_POLLUTANT_RELEASE,
-        time="reportingYear",
-        groups=[_IDENTIFIER, "pollutantCode", "medium"],
-        threshold_delta=THRESHOLD_UNIT_ERROR,
-        threshold_range=THRESHOLD_RANGE,
-    )
+    # data = sanitise_units(
+    #     data=data,
+    #     value=_POLLUTANT_RELEASE,
+    #     time="reportingYear",
+    #     groups=[_IDENTIFIER, "pollutantCode", "medium"],
+    #     threshold_delta=THRESHOLD_UNIT_ERROR,
+    #     threshold_range=THRESHOLD_RANGE,
+    # )
     data = _sanitise_proxy(data=data)
     return data
 
@@ -264,7 +264,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             FROM {prefix}_jump_target t
             LEFT JOIN {prefix}_jump_ratio r 
             USING ({time}, {identifier}, {", ".join(groups)})
-            WHERE t.error AND r.error
+            WHERE t.is_jump AND r.is_jump
             GROUP BY ALL
             """
         ),

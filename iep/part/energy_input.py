@@ -10,7 +10,6 @@ from iep.config import (
     NA_VALUES,
     PATH_IEP,
     THRESHOLD_RANGE,
-    THRESHOLD_UNIT_ERROR,
     VERSION,
 )
 from iep.utils import CteQueue, read_duckdb
@@ -69,6 +68,7 @@ def load(
             version=version, reload=reload, connection=connection
         ).sql_query(),
     )
+    data = _standardise_fuels(data=data)
     if balance:
         data = iep.utils.balance(
             data=data,
@@ -82,29 +82,47 @@ def load(
         )
     if sanitise:
         data = _sanitise(data=data)
-
     return connection.sql(data.to_sql())
 
 
-def _sanitise(data: CteQueue, deduplicate: bool = False) -> CteQueue:
-    if deduplicate:
-        data = data.extend(
-            name=f"{data.hash}_deduplicated",
-            query=dedent(
-                f"""SELECT DISTINCT ON (reportingYear, {_ID}, {", ".join(_GROUPS)})
-                FROM {data.final}
-                ORDER BY reportingYear, {_ID}, {", ".join(_GROUPS)}
-                """
-            ),
-        )
-    data = iep.utils.sanitise_units(
-        data=data,
-        value=_ENERGY_INPUT,
-        time="reportingYear",
-        groups=[_ID] + _GROUPS,
-        threshold_delta=THRESHOLD_UNIT_ERROR,
-        threshold_range=THRESHOLD_RANGE,
+def _standardise_fuels(data: CteQueue) -> CteQueue:
+    data = data.extend(
+        name=f"{data.hash}_fuel_code",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    -- 'Other' not informative; set to NULL
+                    NULLIF(otherSolidFuelCode, 'Other') AS otherSolidFuelCode,
+                    NULLIF(otherSolidFuelName, 'Other') AS otherSolidFuelName,
+                    NULLIF(otherGaseousFuelCode, 'Other') AS otherGaseousFuelCode,
+                    NULLIF(otherGaseousFuelName, 'Other') AS otherGaseousFuelName
+                )
+            FROM {data.final}
+            """
+        ),
     )
+    data = data.extend(
+        name=f"{data.hash}_fuel_code_agg",
+        query=dedent(
+            f"""SELECT
+                Installation_Part_INSPIRE_ID,
+                reportingYear,
+                fuelInputCode,
+                fuelInputName,
+                otherSolidFuelCode,
+                otherSolidFuelName,
+                otherGaseousFuelCode,
+                otherGaseousFuelName,
+                SUM(energyInputTJ) AS energyInputTJ
+            FROM {data.final}
+            GROUP BY ALL
+            """
+        ),
+    )
+    return data
+
+
+def _sanitise(data: CteQueue) -> CteQueue:
     data = _sanitise_proxy(data=data)
     return data
 
@@ -117,6 +135,40 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     target: str = _ENERGY_INPUT
     groups: list[str] = ["pollutantCode"]
     proxy: str = "totalPollutantQuantityTNE"
+    # Calculate log delta
+    data = data.extend(
+        name=f"{prefix}_with_log_delta",
+        query=dedent(
+            f"""SELECT
+                    *,
+                    LAG({target}) OVER w AS lagged,
+                    CASE
+                        WHEN {target} > 0.0 AND lagged > 0.0
+                        THEN LOG10({target}) - LOG10(lagged)
+                    END AS log_delta,  
+                FROM {input_name}
+                WINDOW w AS (
+                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                    ORDER BY {time} 
+                )
+                """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_with_log_delta_flag",
+        query=dedent(
+            f"""SELECT
+                    *,
+                    ABS(log_delta) > 0.5 AS is_large_change,
+                    BOOL_OR(is_large_change) OVER w AS has_large_change 
+                FROM {prefix}_with_log_delta
+                WINDOW w AS (
+                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                )
+                """
+        ),
+    )
+    # Get emission proxy
     data = data.extend(
         name=f"{prefix}_emissions",
         query=iep.part.emissions.load(balance=True, sanitise=True).sql_query(),
@@ -126,12 +178,13 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         query=f"""SELECT
             {time},
             {identifier},
-            HASH({", ".join(groups)}) AS proxy_id,
+            {", ".join(groups)},
             SUM({proxy}) AS proxy 
         FROM {prefix}_emissions 
         GROUP BY ALL
         """,
     )
+    # Get target: total energyInputTJ
     data = data.extend(
         name=f"{prefix}_target",
         query=dedent(
@@ -145,13 +198,14 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
+    # Calculate ratio: emissions by pollutant / total energy input
     data = data.extend(
         name=f"{prefix}_ratio",
         query=dedent(
             f"""SELECT
                 target.{time},  
                 target.{identifier},
-                proxy.proxy_id,
+                {", ".join(f"proxy.{g}" for g in groups)},
                 CASE
                     WHEN target.target > 0.0
                     THEN proxy.proxy / target.target
@@ -162,6 +216,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
+    # Check if ratio jumps up and down driven by jump in target (rather than proxy)
     data = data.extend(
         name=f"{prefix}_jump_target",
         query=iep.utils.is_jump(
@@ -178,7 +233,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         query=iep.utils.is_jump(
             table=f"{prefix}_ratio",
             time=time,
-            identifiers=[identifier, "proxy_id"],
+            identifiers=[identifier] + groups,
             value="ratio",
             threshold_delta=0.75,
             threshold_range=THRESHOLD_RANGE,
@@ -186,7 +241,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     )
     # Check if ratio for any pollutant jumps
     data = data.extend(
-        name=f"{prefix}_scalar",
+        name=f"{prefix}_ratio_jump_scalar",
         query=dedent(
             f"""SELECT
                 {time},
@@ -195,49 +250,126 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             FROM {prefix}_jump_target t
             LEFT JOIN {prefix}_jump_ratio r 
             USING ({time}, {identifier})
-            WHERE t.error AND r.error
+            WHERE t.is_jump AND r.is_jump
             GROUP BY ALL
             """
         ),
     )
-    # Get scalar by fuel type (only adjust if energy inputs jump for a given fuel type)
+    # Check if ratio is outlier:
+    #   beyond threshold_quantile across all observations, and
+    #   2x larger than median value within Installation_Part_INSPIRE_ID
+    data = iep.utils.is_outlier(
+        data=data,
+        table=f"{prefix}_ratio",
+        identifiers=[identifier],
+        groups=groups,
+        value="ratio",
+        threshold_quantile=0.99,
+        threshold_outlier=2.0,
+    )
+    # Get outlier year-identifier pairs (aggregate across pollutantCodes)
     data = data.extend(
-        name=f"{prefix}_scalar_by_fuel",
+        name=f"{prefix}_ratio_outlier_scalar",
         query=dedent(
             f"""SELECT
-                t.*,
-                LAG({target}) OVER w AS lagged,
-                CASE
-                    WHEN {target} > 0.0 AND lagged > 0.0
-                    THEN LOG10({target}) - LOG10(lagged)
-                END AS log_change,
-                CASE
-                    WHEN e.scalar NOT NULL AND ABS(log_change) > 0.5 THEN e.scalar
-                END AS scalar_fuel
-            FROM {input_name} t 
-            LEFT JOIN {prefix}_scalar e
-            USING ({identifier}, {time}) 
-            WINDOW w AS (
-                PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
-                ORDER BY {time} 
-            )
+                {time}, 
+                {identifier},
+                MAX(scalar) AS scalar
+            FROM {prefix}_ratio_outlier
+            WHERE is_outlier 
+            GROUP BY ALL
             """
         ),
     )
+    # Get scalars by fuelInputCode:
+    #   an outlier in the ratio must come from misreporting of at least one fuelInputCode
+    #   identify misreported fuelInputCode by log-delta to median in non-outlier years
+    data = data.extend(
+        name=f"{prefix}_with_outlier_scalar",
+        query=dedent(
+            f"""SELECT
+                *,
+                MEDIAN({target}) FILTER (outlier.scalar IS NULL)
+                    OVER (PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode)
+                AS _median,
+                CASE
+                    WHEN outlier.scalar NOT NULL AND {target} > 0.0 AND _median > 0.0
+                    THEN ROUND(LOG10(_median / {target}), 0)
+                END AS _delta_to_median,
+                CASE
+                    WHEN outlier.scalar NOT NULL AND _delta_to_median >= outlier.scalar 
+                    THEN NULLIF(_delta_to_median, 0)
+                END AS scalar_outlier, 
+            FROM {prefix}_with_log_delta_flag
+            LEFT JOIN {prefix}_ratio_outlier_scalar outlier
+                USING ({time}, {identifier})
+            """
+        ),
+    )
+    # Scale energyInputTJ if jump or outlier
     data = data.extend(
         name=f"{prefix}_{input_name}",
         query=dedent(
             f"""SELECT
-                * EXCLUDE(
-                    lagged, log_change, scalar_fuel
-                ) REPLACE(
+                t.*
+                EXCLUDE(
+                    lagged,
+                    log_delta,
+                    is_large_change,
+                    has_large_change,
+                    _median,
+                    _delta_to_median,
+                    scalar_outlier 
+                )
+                REPLACE(
                     CASE
-                        WHEN scalar_fuel NOT NULL THEN {target}  * POW(10, scalar_fuel)
+                        WHEN jump.scalar NOT NULL AND t.is_large_change 
+                            THEN {target} * POW(10, jump.scalar)
+                        WHEN t.scalar_outlier NOT NULL 
+                            THEN {target} * POW(10, t.scalar_outlier) 
                         ELSE {target}
                     END AS {target}
-                )
-            FROM {prefix}_scalar_by_fuel
+                ) 
+            FROM {prefix}_with_outlier_scalar t 
+            LEFT JOIN {prefix}_ratio_jump_scalar jump
+                USING ({identifier}, {time})
             """
         ),
     )
     return data
+
+
+if __name__ == "__main__":
+    raw = _load_raw()
+    sanitised = load(balance=True, sanitise=True)
+
+    # %%
+    import altair
+
+    part = "AT.CAED/9008390317877.PART"
+    part = "CZ.CHMI.0047/CZ0047.PART"
+    part = "ES.CAED/002112001.PART"
+    altair.Chart(
+        # e.aggregate("reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ")
+        raw.filter(
+            f"Installation_Part_INSPIRE_ID = '{part}'",
+        ).aggregate(
+            "Installation_Part_INSPIRE_ID, reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ"
+        )
+    ).mark_area().encode(
+        x="reportingYear:O", y="energyInputTJ:Q", color="fuelInputCode:N"
+    ).properties(width=800, height=800).save(
+        r"/Users/leonardstimpfle/Downloads/fuelinput_raw.html"
+    )
+    altair.Chart(
+        # e.aggregate("reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ")
+        sanitised.filter(
+            f"Installation_Part_INSPIRE_ID = '{part}'",
+        ).aggregate(
+            "Installation_Part_INSPIRE_ID, reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ"
+        )
+    ).mark_area().encode(
+        x="reportingYear:O", y="energyInputTJ:Q", color="fuelInputCode:N"
+    ).properties(width=800, height=800).save(
+        r"/Users/leonardstimpfle/Downloads/fuelinput_sanitised.html"
+    )

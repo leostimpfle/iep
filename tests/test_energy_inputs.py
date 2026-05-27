@@ -28,6 +28,30 @@ _CASES: Final[tuple[_Case, ...]] = (
         year=2019,
         is_error=True,
     ),
+    _Case(
+        installation_part="AT.CAED/9008390317877.PART",
+        fuel_input_code="OtherSolidFuels",
+        year=2016,
+        is_error=True,
+    ),
+    _Case(
+        installation_part="AT.CAED/9008390317877.PART",
+        fuel_input_code="OtherSolidFuels",
+        year=2017,
+        is_error=True,
+    ),
+    _Case(
+        installation_part="ES.CAED/002112001.PART",
+        fuel_input_code="NaturalGas",
+        year=2018,
+        is_error=False,
+    ),
+    _Case(
+        installation_part="ES.CAED/002112001.PART",
+        fuel_input_code="NaturalGas",
+        year=2021,
+        is_error=False,
+    ),
 )
 
 

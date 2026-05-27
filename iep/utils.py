@@ -9,7 +9,7 @@ from typing import Literal
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_PACKAGE
+from iep.config import PATH_PACKAGE, THRESHOLD_RANGE, THRESHOLD_UNIT_ERROR
 
 
 class DuckDBReader(StrEnum):
@@ -173,6 +173,51 @@ def balance(data: CteQueue, time: str, groups: list[str]) -> CteQueue:
     return data
 
 
+def is_outlier(
+    data: CteQueue,
+    table: str,
+    identifiers: list[str],
+    groups: list[str],
+    value: str,
+    threshold_quantile: float = 0.99,
+    threshold_outlier: float = 2.0,
+) -> CteQueue:
+    prefix: str = data.hash
+    data = data.extend(
+        name=f"{prefix}_outlier_threshold",
+        query=dedent(
+            f"""SELECT
+                *,
+                QUANTILE_CONT({value}, {threshold_quantile})
+                    OVER (PARTITION BY {", ".join(groups)})
+                AS _outlier_threshold,
+                CASE
+                   WHEN {value} > 0.0 
+                   THEN LOG10({value} / _outlier_threshold) > LOG10({threshold_outlier})
+                END AS is_outlier
+            FROM {table}
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{table}_outlier",
+        query=dedent(
+            f"""SELECT
+                *,
+                MEDIAN({value}) FILTER(NOT is_outlier)
+                    OVER (PARTITION BY {", ".join(identifiers + groups)})
+                AS _median_inlier,
+                CASE
+                   WHEN is_outlier AND {value} > 0.0 AND _median_inlier > 0.0
+                   THEN NULLIF(ROUND(LOG10({value} / _median_inlier)), 0) 
+                END AS scalar 
+            FROM {prefix}_outlier_threshold 
+            """
+        ),
+    )
+    return data
+
+
 def is_jump(
     table: str,
     time: str,
@@ -201,7 +246,7 @@ def is_jump(
                 AND SIGN(_delta) != SIGN(_delta_lead)
                 AND {value} / POW(10, scalar) 
                     BETWEEN _min * (1 - {threshold_range}) AND _max * (1 + {threshold_range}) 
-            AS error
+            AS is_jump
         FROM {table} 
         WINDOW
             w_unordered AS (PARTITION BY {", ".join(identifiers)}),
@@ -215,8 +260,8 @@ def sanitise_units(
     value: str,
     time: str,
     groups: list[str],
-    threshold_delta: float,
-    threshold_range: float,
+    threshold_delta: float = THRESHOLD_UNIT_ERROR,
+    threshold_range: float = THRESHOLD_RANGE,
 ) -> CteQueue:
     """Correct probable unit errors by rescaling outlier emissions.
 
@@ -245,7 +290,7 @@ def sanitise_units(
             f"""SELECT
                 t.* REPLACE(
                     CASE
-                        WHEN s.error THEN t.{value} / POW(10, s.scalar)
+                        WHEN s.is_jump THEN t.{value} / POW(10, s.scalar)
                         ELSE t.{value}
                     END AS {value}
                 )
