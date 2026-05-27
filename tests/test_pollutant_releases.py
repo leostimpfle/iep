@@ -45,6 +45,13 @@ _CASES: Final[tuple[_Case, ...]] = (
         year=2023,
         is_error=True,
     ),
+    _Case(
+        facility="ES.CAED/002112000.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2021,
+        is_error=False,
+    ),
 )
 
 

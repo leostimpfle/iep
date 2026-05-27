@@ -28,6 +28,30 @@ _CASES: Final[tuple[_Case, ...]] = (
         year=2019,
         is_error=True,
     ),
+    _Case(
+        installation_part="AT.CAED/9008390317877.PART",
+        fuel_input_code="OtherSolidFuels",
+        year=2016,
+        is_error=True,
+    ),
+    _Case(
+        installation_part="AT.CAED/9008390317877.PART",
+        fuel_input_code="OtherSolidFuels",
+        year=2017,
+        is_error=True,
+    ),
+    _Case(
+        installation_part="ES.CAED/002112001.PART",
+        fuel_input_code="NaturalGas",
+        year=2018,
+        is_error=False,
+    ),
+    _Case(
+        installation_part="ES.CAED/002112001.PART",
+        fuel_input_code="NaturalGas",
+        year=2021,
+        is_error=False,
+    ),
 )
 
 
@@ -49,6 +73,8 @@ def test_sanitise(
         "reportingYear",
         "Installation_Part_INSPIRE_ID",
         "fuelInputCode",
+        "otherSolidFuelCode",
+        "otherGaseousFuelCode",
     ]
     test = (
         raw.select(f"{', '.join(columns)}, energyInputTJ AS raw")
@@ -56,9 +82,13 @@ def test_sanitise(
             sanitised.select(
                 f"{', '.join(columns)}, energyInputTj AS sanitised",
             ),
-            condition=", ".join(columns),
+            condition=" AND ".join(
+                f"{raw.alias}.{c} IS NOT DISTINCT FROM {sanitised.alias}.{c}"
+                for c in columns
+            ),
             how="inner",
         )
+        .select(f"{', '.join(f'{raw.alias}.{c}' for c in columns)}, raw, sanitised")
         .filter(
             f"""Installation_Part_INSPIRE_ID = '{case.installation_part}'
             AND reportingYear = {case.year}
