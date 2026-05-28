@@ -10,91 +10,166 @@ import iep
 @dataclass(kw_only=True, frozen=True, slots=True)
 class _Case:
     facility: str
+    year: int
     pollutant_code: str
     medium: str
-    year: int
-    is_error: bool
+    sanitised_total_pollutant_quantity_kg: float
+    raw_total_pollutant_quantity_kg: float
 
 
 _CASES: Final[tuple[_Case, ...]] = (
+    _Case(
+        facility="IT.CAED/660503069.FACILITY",  # deduplicated from "IT.EEA/2007000625.FACILITY"
+        year=2016,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=1_110_000_000,
+        sanitised_total_pollutant_quantity_kg=110_000,
+    ),
     _Case(
         facility="ES.CAED/003519000.FACILITY",
         pollutant_code="CO2",
         medium="AIR",
         year=2008,
-        is_error=False,
+        raw_total_pollutant_quantity_kg=312_000_000,
+        sanitised_total_pollutant_quantity_kg=312_000_000,
     ),
+    # TODO: both appear to be wrong? Check LT_1 in EU ETS (https://www.euets.info/installation/LT_1)
     _Case(
         facility="LT.CAED/153009143.FACILITY",
         pollutant_code="CO2",
         medium="AIR",
         year=2018,
-        is_error=True,
+        raw_total_pollutant_quantity_kg=2_370_000,
+        sanitised_total_pollutant_quantity_kg=2_370_000_000,
     ),
     _Case(
         facility="CZ.MZP.T805/CZ93379263.FACILITY",
         pollutant_code="CO2",
         medium="AIR",
         year=2020,
-        is_error=True,
+        sanitised_total_pollutant_quantity_kg=52_520_000,
+        raw_total_pollutant_quantity_kg=52_520,
     ),
     _Case(
         facility="DK.CAED/000082948.FACILITY",
         pollutant_code="CO2",
         medium="AIR",
-        year=2023,
-        is_error=True,
+        year=2024,
+        sanitised_total_pollutant_quantity_kg=288_000_000,
+        raw_total_pollutant_quantity_kg=288_000,
     ),
     _Case(
         facility="ES.CAED/002112000.FACILITY",
         pollutant_code="CO2",
         medium="AIR",
         year=2021,
-        is_error=False,
+        sanitised_total_pollutant_quantity_kg=210_000_000,
+        raw_total_pollutant_quantity_kg=210_000_000,
+    ),
+    _Case(
+        facility="IS.CAED/520303-4210",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2020,
+        sanitised_total_pollutant_quantity_kg=528_000_000,
+        raw_total_pollutant_quantity_kg=528_000,
+    ),
+    _Case(
+        facility="PL.MŚ/000003652.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2020,
+        sanitised_total_pollutant_quantity_kg=933_000_000,
+        raw_total_pollutant_quantity_kg=933_000_000,
+    ),
+    _Case(
+        facility="CZ.MZP.E531/CZ27995052.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2021,
+        sanitised_total_pollutant_quantity_kg=628_427_000,
+        raw_total_pollutant_quantity_kg=628_427,
+    ),
+    _Case(
+        facility="CZ.MZP.U423/CZ15080054.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2022,
+        sanitised_total_pollutant_quantity_kg=191_734_000,
+        raw_total_pollutant_quantity_kg=191_734,
+    ),
+    _Case(
+        facility="DK.CAED/000105331.FACILITY",
+        year=2018,
+        pollutant_code="CO2",
+        medium="AIR",
+        sanitised_total_pollutant_quantity_kg=81_443_000,
+        raw_total_pollutant_quantity_kg=81_443,
+    ),
+    _Case(
+        facility="FR.CAED/13773.FACILITY",
+        year=2018,
+        pollutant_code="CO2",
+        medium="AIR",
+        sanitised_total_pollutant_quantity_kg=353_000_000,
+        raw_total_pollutant_quantity_kg=353_000_000,
+    ),
+    _Case(
+        facility="NL.RIVM/000064335.FACILITY",
+        year=2018,
+        pollutant_code="CO2",
+        medium="AIR",
+        sanitised_total_pollutant_quantity_kg=146_000_000,
+        raw_total_pollutant_quantity_kg=146_000,
     ),
 )
 
 
 @pytest.fixture
 def raw() -> DuckDBPyRelation:
-    return iep.facility.pollutant_release.load(
-        deduplicate=False, sanitise=False, interpolate=False
-    )
+    return iep.facility.pollutant_release._load_raw()
+
+
+@pytest.fixture
+def deduplicated() -> DuckDBPyRelation:
+    return iep.facility.pollutant_release.load(deduplicate=True, sanitise=False)
 
 
 @pytest.fixture
 def sanitised() -> DuckDBPyRelation:
-    return iep.facility.pollutant_release.load(
-        deduplicate=False, sanitise=True, interpolate=False
+    return iep.facility.pollutant_release.load(deduplicate=True, sanitise=True)
+
+
+_RANGE_DELTA: Final[tuple[int, int]] = (400, 500)
+
+
+def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
+    delta = (
+        deduplicated.aggregate(
+            "reportingYear, Facility_INSPIRE_ID, pollutantCode, medium, SUM(totalPollutantQuantityKg) AS raw"
+        )
+        .join(
+            sanitised.aggregate(
+                "reportingYear, Facility_INSPIRE_ID, pollutantCode, medium, SUM(totalPollutantQuantityKg) AS sanitised"
+            ),
+            condition="reportingYear, Facility_INSPIRE_ID, pollutantCode, medium",
+            how="outer",
+        )
+        .filter("ROUND(raw) != ROUND(sanitised)")
     )
+    n_delta = delta.shape[0]
+    assert n_delta > _RANGE_DELTA[0] and n_delta < _RANGE_DELTA[1]
 
 
 @pytest.mark.parametrize("case", _CASES)
-def test_sanitise(
-    case: _Case, raw: DuckDBPyRelation, sanitised: DuckDBPyRelation
-) -> None:
-    columns: list[str] = [
-        "reportingYear",
-        "Facility_INSPIRE_ID",
-        "pollutantCode",
-        "medium",
-    ]
-    test = (
-        raw.select(f"{', '.join(columns)}, totalPollutantQuantityKg AS raw")
-        .join(
-            sanitised.select(
-                f"{', '.join(columns)}, totalPollutantQuantityKg AS sanitised",
-            ),
-            condition=", ".join(columns),
-            how="inner",
-        )
-        .filter(
-            f"""Facility_INSPIRE_ID = '{case.facility}'
-            AND reportingYear = {case.year}
-            AND pollutantCode = '{case.pollutant_code}'
-            AND medium = '{case.medium}'
-            AND raw {"!=" if case.is_error else "="} sanitised 
-            """
-        )
+def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
+    test = sanitised.filter(
+        f"""Facility_INSPIRE_ID = '{case.facility}'
+        AND reportingYear = {case.year}
+        AND pollutantCode = '{case.pollutant_code}'
+        AND medium = '{case.medium}'
+        --AND ROUND(totalPollutantQuantityKg) = ROUND({case.sanitised_total_pollutant_quantity_kg})
+        """
     )
     assert test.shape[0] == 1

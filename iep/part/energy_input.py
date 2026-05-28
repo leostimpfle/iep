@@ -55,7 +55,6 @@ def _load_raw(
 
 
 def load(
-    balance: bool = False,
     sanitise: bool = False,
     version: str = VERSION,
     reload: bool = False,
@@ -68,8 +67,8 @@ def load(
             version=version, reload=reload, connection=connection
         ).sql_query(),
     )
-    data = _standardise_fuels(data=data)
-    if balance:
+    if sanitise:
+        data = _standardise_fuels(data=data)
         data = iep.utils.balance(
             data=data,
             time="reportingYear",
@@ -80,24 +79,71 @@ def load(
                 "otherGaseousFuelCode",
             ],
         )
-    if sanitise:
         data = _sanitise(data=data)
     return connection.sql(data.to_sql())
 
 
 def _standardise_fuels(data: CteQueue) -> CteQueue:
+    prefix: str = data.hash
+    partition_by: Final[list[str]] = ["Installation_Part_INSPIRE_ID", "fuelInputCode"]
+    order_by: Final[list[str]] = ["reportingYear"]
     data = data.extend(
-        name=f"{data.hash}_fuel_code",
+        name=f"{prefix}_backfill_details",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    {iep.utils.fill(column="furtherDetails", partition_by=partition_by, order_by=order_by, direction="both")} AS furtherDetails,
+                    {iep.utils.fill(column="otherSolidFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherSolidFuelCode,
+                    {iep.utils.fill(column="otherGaseousFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherGaseousFuelCode
+               )
+            FROM {data.final}
+            """,
+        ),
+    )
+
+    def is_black_liquor(column: str) -> str:
+        strings: list[str] = [
+            "black liquor",
+            "licor negro",
+            "lixívia negra",
+            "ablauge",
+        ]
+        return f"""regexp_matches({column}, '(?i)(?:{"|".join(strings)})')"""
+
+    data = data.extend(
+        name=f"{prefix}_recoded",
         query=dedent(
             f"""SELECT
                 * REPLACE(
                     -- 'Other' not informative; set to NULL
                     NULLIF(otherSolidFuelCode, 'Other') AS otherSolidFuelCode,
-                    NULLIF(otherSolidFuelName, 'Other') AS otherSolidFuelName,
-                    NULLIF(otherGaseousFuelCode, 'Other') AS otherGaseousFuelCode,
-                    NULLIF(otherGaseousFuelName, 'Other') AS otherGaseousFuelName
+                    CASE
+                        WHEN otherGaseousFuelCode = 'Other' THEN NULL
+                        WHEN otherGaseousFuelCode = 'FurnaceGas' THEN 'BlastFurnaceGas'
+                        -- black liquor is biomass
+                        WHEN {is_black_liquor(column="furtherDetails")} THEN 'Biomass' 
+                        WHEN regexp_matches(furtherDetails, '(?i)(?:biogas)') THEN 'Biomass'
+                        ELSE otherGaseousFuelCode
+                    END AS otherGaseousFuelCode,
                 )
-            FROM {data.final}
+            FROM {prefix}_backfill_details
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_enhanced",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    CASE
+                        WHEN otherSolidFuelCode NOT NULL AND otherSolidFuelCode != 'Other'
+                            THEN otherSolidFuelCode
+                        WHEN otherGaseousFuelCode NOT NULL AND  otherGaseousFuelCode != 'Other'
+                            THEN otherGaseousFuelCode
+                        ELSE fuelInputCode
+                    END AS fuelInputCode 
+                )
+            FROM {prefix}_recoded
             """
         ),
     )
@@ -108,11 +154,8 @@ def _standardise_fuels(data: CteQueue) -> CteQueue:
                 Installation_Part_INSPIRE_ID,
                 reportingYear,
                 fuelInputCode,
-                fuelInputName,
                 otherSolidFuelCode,
-                otherSolidFuelName,
                 otherGaseousFuelCode,
-                otherGaseousFuelName,
                 SUM(energyInputTJ) AS energyInputTJ
             FROM {data.final}
             GROUP BY ALL
@@ -206,6 +249,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 target.{time},  
                 target.{identifier},
                 {", ".join(f"proxy.{g}" for g in groups)},
+                target.target,
                 CASE
                     WHEN target.target > 0.0
                     THEN proxy.proxy / target.target
@@ -248,7 +292,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {identifier},
                 MAX(r.scalar) AS scalar
             FROM {prefix}_jump_target t
-            LEFT JOIN {prefix}_jump_ratio r 
+            LEFT JOIN {prefix}_jump_ratio r
             USING ({time}, {identifier})
             WHERE t.is_jump AND r.is_jump
             GROUP BY ALL
@@ -263,7 +307,8 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         table=f"{prefix}_ratio",
         identifiers=[identifier],
         groups=groups,
-        value="ratio",
+        reference="ratio",
+        target="target",
         threshold_quantile=0.99,
         threshold_outlier=2.0,
     )
@@ -276,7 +321,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {identifier},
                 MAX(scalar) AS scalar
             FROM {prefix}_ratio_outlier
-            WHERE is_outlier 
+            WHERE scalar NOT NULL
             GROUP BY ALL
             """
         ),
@@ -297,7 +342,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                     THEN ROUND(LOG10(_median / {target}), 0)
                 END AS _delta_to_median,
                 CASE
-                    WHEN outlier.scalar NOT NULL AND _delta_to_median >= outlier.scalar 
+                    WHEN outlier.scalar NOT NULL AND ABS(_delta_to_median) >= outlier.scalar 
                     THEN NULLIF(_delta_to_median, 0)
                 END AS scalar_outlier, 
             FROM {prefix}_with_log_delta_flag
@@ -306,7 +351,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
-    # Scale energyInputTJ if jump or outlier
+    # Scale energyInputTJ
     data = data.extend(
         name=f"{prefix}_{input_name}",
         query=dedent(
@@ -340,36 +385,13 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
 
 
 if __name__ == "__main__":
-    raw = _load_raw()
-    sanitised = load(balance=True, sanitise=True)
-
-    # %%
-    import altair
-
-    part = "AT.CAED/9008390317877.PART"
-    part = "CZ.CHMI.0047/CZ0047.PART"
-    part = "ES.CAED/002112001.PART"
-    altair.Chart(
-        # e.aggregate("reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ")
-        raw.filter(
-            f"Installation_Part_INSPIRE_ID = '{part}'",
-        ).aggregate(
-            "Installation_Part_INSPIRE_ID, reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ"
-        )
-    ).mark_area().encode(
-        x="reportingYear:O", y="energyInputTJ:Q", color="fuelInputCode:N"
-    ).properties(width=800, height=800).save(
-        r"/Users/leonardstimpfle/Downloads/fuelinput_raw.html"
-    )
-    altair.Chart(
-        # e.aggregate("reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ")
-        sanitised.filter(
-            f"Installation_Part_INSPIRE_ID = '{part}'",
-        ).aggregate(
-            "Installation_Part_INSPIRE_ID, reportingYear, fuelInputCode, SUM(energyInputTJ) AS energyInputTJ"
-        )
-    ).mark_area().encode(
-        x="reportingYear:O", y="energyInputTJ:Q", color="fuelInputCode:N"
-    ).properties(width=800, height=800).save(
-        r"/Users/leonardstimpfle/Downloads/fuelinput_sanitised.html"
-    )
+    e = load(sanitise=True)
+    fid = "IT.CAED/100401001.PART"
+    fid = "IT.CAED/570162008.PART"
+    fid = "AT.CAED/9008390317877.PART"
+    fid = "ES.CAED/002112001.PART"
+    fid = "ES.CAED/002112001.PART"
+    fid = "NL.RIVM/202419001.PART"
+    e.filter(f"Installation_part_INSPIRE_ID = '{fid}' AND energyInputTJ > 0").aggregate(
+        "reportingYear, fuelInputCode, sum(energyInputTJ) AS t"
+    ).order("reportingYear")
