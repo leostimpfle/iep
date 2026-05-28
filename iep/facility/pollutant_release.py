@@ -10,10 +10,9 @@ from iep import utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
-    THRESHOLD_RANGE,
     VERSION,
 )
-from iep.utils import Cte, CteQueue, Level, read_duckdb
+from iep.utils import CteQueue, Level, read_duckdb
 
 _IDENTIFIER: Final[str] = "Facility_INSPIRE_ID"
 _POLLUTANT_RELEASE: Final[str] = "totalPollutantQuantityKg"
@@ -51,10 +50,8 @@ def _load_raw(
 
 
 def load(
-    deduplicate: bool = False,
-    balance: bool = False,
-    sanitise: bool = False,
-    interpolate: bool = False,
+    deduplicate: bool = True,
+    sanitise: bool = True,
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -68,15 +65,13 @@ def load(
     )
     if deduplicate:
         data = utils.deduplicate(data=data, level=Level.Facility)
-    if balance:
+    if sanitise:
         data = iep.utils.balance(
             data=data,
             time="reportingYear",
             groups=["Facility_INSPIRE_ID", "pollutantCode", "medium"],
         )
-    if sanitise:
         data = _sanitise(data=data)
-    if interpolate:
         data = _interpolate(data=data)
     return connection.sql(data.to_sql())
 
@@ -86,16 +81,8 @@ def _sanitise(data: CteQueue) -> CteQueue:
         name="_sanitise",
         query=f"SELECT * FROM {data.final} WHERE pollutantCode NOT NULL AND medium NOT NULL",
     )
-    data = _sanitise_biomassco2(data=data)
-    # data = sanitise_units(
-    #     data=data,
-    #     value=_POLLUTANT_RELEASE,
-    #     time="reportingYear",
-    #     groups=[_IDENTIFIER, "pollutantCode", "medium"],
-    #     threshold_delta=THRESHOLD_UNIT_ERROR,
-    #     threshold_range=THRESHOLD_RANGE,
-    # )
     data = _sanitise_proxy(data=data)
+    data = _sanitise_biomassco2(data=data)
     return data
 
 
@@ -183,7 +170,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     target: str = _POLLUTANT_RELEASE
     groups: list[str] = ["pollutantCode", "medium"]
     proxy: str = _POLLUTANT_RELEASE
-    cte_target = Cte(
+    data = data.extend(
         name=f"{prefix}_target",
         query=dedent(
             f"""SELECT
@@ -197,7 +184,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
-    cte_proxy = Cte(
+    data = data.extend(
         name=f"{prefix}_proxy",
         query=f"""SELECT
             {time},
@@ -205,12 +192,10 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             {", ".join(groups)},
             SUM({proxy}) AS proxy 
         FROM {input_name} 
-        WHERE medium = 'AIR' AND pollutantCode IN ('SOX', 'NOX')
+        WHERE medium = 'AIR' AND pollutantCode IN ('SOX', 'NOX', 'PM10')
         GROUP BY ALL
         """,
     )
-    data = data.extend(name=cte_target.name, query=cte_target.query)
-    data = data.extend(name=cte_proxy.name, query=cte_proxy.query)
     data = data.extend(
         name=f"{prefix}_ratio",
         query=dedent(
@@ -219,52 +204,42 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 t.{identifier},
                 {", ".join(f"t.{g}" for g in groups)},
                 {", ".join(f"p.{g} AS {g}_proxy" for g in groups)},
+                t.target,
                 CASE
                     WHEN t.target > 0.0 AND p.proxy > 0.0
                     THEN p.proxy / t.target
                 END AS ratio
-            FROM {cte_target.name} t
-            LEFT JOIN {cte_proxy.name} p
+            FROM {prefix}_target t
+            LEFT JOIN {prefix}_proxy p
             USING ({identifier}, {time})
             """
         ),
     )
-    data = data.extend(
-        name=f"{prefix}_jump_target",
-        query=iep.utils.is_jump(
-            table=f"{prefix}_target",
-            time=time,
-            identifiers=[identifier] + groups,
-            value="target",
-            threshold_delta=0.75,
-            threshold_range=THRESHOLD_RANGE,
-        ),
+    data = iep.utils.is_outlier(
+        data=data,
+        table=f"{prefix}_ratio",
+        identifiers=[identifier],
+        groups=groups + [f"{g}_proxy" for g in groups],
+        reference="ratio",
+        target="target",
+        threshold_quantile=0.95,
+        threshold_outlier=2.0,
     )
-    data = data.extend(
-        name=f"{prefix}_jump_ratio",
-        query=iep.utils.is_jump(
-            table=f"{prefix}_ratio",
-            time=time,
-            identifiers=[identifier] + groups + [f"{g}_proxy" for g in groups],
-            value="ratio",
-            threshold_delta=0.75,
-            threshold_range=THRESHOLD_RANGE,
-        ),
-    )
-    # Check if ratio for any pollutant jumps
     data = data.extend(
         name=f"{prefix}_scalar",
         query=dedent(
             f"""SELECT
-                t.{time},
-                t.{identifier},
-                {", ".join(f"t.{g}" for g in groups)},
-                MAX(r.scalar) AS scalar
-            FROM {prefix}_jump_target t
-            LEFT JOIN {prefix}_jump_ratio r 
-            USING ({time}, {identifier}, {", ".join(groups)})
-            WHERE t.is_jump AND r.is_jump
+                {time}, 
+                {identifier},
+                {", ".join(groups)},
+                SUM(CASE WHEN ratio NOT NULL THEN 1 END) AS ratios,
+                SUM(CASE WHEN scalar NOT NULL THEN 1 END) AS outliers,
+                ratios = outliers AS all_outliers,
+                MAX(scalar) AS scalar 
+            FROM {prefix}_ratio_outlier
+            WHERE scalar NOT NULL
             GROUP BY ALL
+            --HAVING all_outliers 
             """
         ),
     )
@@ -277,13 +252,68 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                         WHEN e.scalar NOT NULL THEN {target} * POW(10, e.scalar)
                         ELSE {target}
                     END AS {target}
-                ) 
+                )
             FROM {input_name} t
             LEFT JOIN {prefix}_scalar e
             USING ({time}, {identifier}, {", ".join(groups)})
             """
         ),
     )
+    # data = data.extend(
+    #     name=f"{prefix}_jump_target",
+    #     query=iep.utils.is_jump(
+    #         table=f"{prefix}_target",
+    #         time=time,
+    #         identifiers=[identifier] + groups,
+    #         value="target",
+    #         threshold_delta=0.75,
+    #         threshold_range=THRESHOLD_RANGE,
+    #     ),
+    # )
+    # data = data.extend(
+    #     name=f"{prefix}_jump_ratio",
+    #     query=iep.utils.is_jump(
+    #         table=f"{prefix}_ratio",
+    #         time=time,
+    #         identifiers=[identifier] + groups + [f"{g}_proxy" for g in groups],
+    #         value="ratio",
+    #         threshold_delta=0.75,
+    #         threshold_range=THRESHOLD_RANGE,
+    #     ),
+    # )
+    # # Check if ratio for any pollutant jumps
+    # data = data.extend(
+    #     name=f"{prefix}_scalar",
+    #     query=dedent(
+    #         f"""SELECT
+    #             t.{time},
+    #             t.{identifier},
+    #             {", ".join(f"t.{g}" for g in groups)},
+    #             MAX(r.scalar) AS scalar
+    #         FROM {prefix}_jump_target t
+    #         LEFT JOIN {prefix}_jump_ratio r
+    #         USING ({time}, {identifier}, {", ".join(groups)})
+    #         WHERE t.is_jump AND r.is_jump
+    #         GROUP BY ALL
+    #         """
+    #     ),
+    # )
+    # data = data.extend(
+    #     name=f"{prefix}_{input_name}",
+    #     query=dedent(
+    #         f"""SELECT
+    #             t.* REPLACE(
+    #                 CASE
+    #                     WHEN e.scalar NOT NULL THEN {target} * POW(10, e.scalar)
+    #                     ELSE {target}
+    #                 END AS {target}
+    #             )
+    #         FROM {input_name} t
+    #         LEFT JOIN {prefix}_scalar e
+    #         USING ({time}, {identifier}, {", ".join(groups)})
+    #         """
+    #     ),
+    # )
     return data
 
 
@@ -420,3 +450,44 @@ def _interpolate(data: CteQueue) -> CteQueue:
         ),
     )
     return data
+
+
+if __name__ == "__main__":
+    raw = load(deduplicate=True, sanitise=False)
+    sanitised = load(deduplicate=True, sanitise=True)
+    pollutant_code = "CO2"
+    medium = "AIR"
+    fid = "DK.CAED/000082948.FACILITY"
+    fid = "FR.CAED/13773.FACILITY"
+    fid = "NL.RIVM/000064335.FACILITY"
+    fid = "IT.EEA/2007000625.FACILITY"
+    fid = "IT.CAED/660503069.FACILITY"
+    fid = "IT.CAED/660502007.FACILITY"
+    fid = "NL.RIVM/000064335.FACILITY"
+    fid = "IT.EEA/2007000625.FACILITY"
+    fid = "IT.CAED/660503069.FACILITY"
+    raw.filter(
+        f"""
+        Facility_INSPIRE_ID = '{fid}'
+        AND pollutantCode = '{pollutant_code}'
+        AND medium = '{medium}'
+        """
+    ).select("reportingYear, totalPollutantQuantityKg").order("reportingYear")
+    sanitised.filter(
+        f"""
+        Facility_INSPIRE_ID = '{fid}'
+        AND pollutantCode = '{pollutant_code}'
+        AND medium = '{medium}'
+        """
+    ).select("reportingYear, totalPollutantQuantityKg").order("reportingYear")
+
+    # %%
+    raw.filter("pollutantCode = 'CO2' AND medium = 'AIR'").select(
+        "reportingYear, Facility_INSPIRE_ID, totalPollutantQuantityKg AS raw"
+    ).join(
+        sanitised.filter("pollutantCode = 'CO2' AND medium = 'AIR'").select(
+            "reportingYear, Facility_INSPIRE_ID, totalPollutantQuantityKg AS sanitised"
+        ),
+        condition="reportingYear, Facility_INSPIRE_ID",
+        how="inner",
+    ).filter("raw != sanitised")

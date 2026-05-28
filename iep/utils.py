@@ -210,7 +210,8 @@ def is_outlier(
     table: str,
     identifiers: list[str],
     groups: list[str],
-    value: str,
+    reference: str,
+    target: str,
     threshold_quantile: float = 0.99,
     threshold_outlier: float = 2.0,
 ) -> CteQueue:
@@ -220,14 +221,16 @@ def is_outlier(
         query=dedent(
             f"""SELECT
                 *,
-                QUANTILE_CONT({value}, {threshold_quantile})
-                    OVER (PARTITION BY {", ".join(groups)})
-                AS _outlier_threshold,
+                QUANTILE_CONT({reference}, {threshold_quantile}) FILTER({reference} > 0.0) OVER w AS _upper,
+                QUANTILE_CONT({reference}, {1 - threshold_quantile}) FILTER({reference} > 0.0) OVER w _lower,
                 CASE
-                   WHEN {value} > 0.0 
-                   THEN LOG10({value} / _outlier_threshold) > LOG10({threshold_outlier})
-                END AS is_outlier
+                   WHEN {reference} > 0.0 
+                   THEN LOG10({reference} / _upper) > LOG10({threshold_outlier})
+                    OR LOG10({reference} / _lower) < LOG10({threshold_outlier})
+                   ELSE FALSE
+                END AS is_reference_outlier
             FROM {table}
+            WINDOW w AS (PARTITION BY {", ".join(groups)})
             """
         ),
     )
@@ -236,14 +239,17 @@ def is_outlier(
         query=dedent(
             f"""SELECT
                 *,
-                MEDIAN({value}) FILTER(NOT is_outlier)
-                    OVER (PARTITION BY {", ".join(identifiers + groups)})
-                AS _median_inlier,
+                MEDIAN({reference}) FILTER(NOT is_reference_outlier) OVER w AS _median_reference,
+                MEDIAN({target}) FILTER(NOT is_reference_outlier) OVER w AS _median_target,
                 CASE
-                   WHEN is_outlier AND {value} > 0.0 AND _median_inlier > 0.0
-                   THEN NULLIF(ROUND(LOG10({value} / _median_inlier)), 0) 
+                   WHEN is_reference_outlier
+                    AND ABS(LOG10({target} / _median_target)) > LOG10({threshold_outlier})
+                    AND {reference} > 0.0
+                    AND _median_reference > 0.0
+                    THEN NULLIF(ROUND(LOG10({reference} / _median_reference)), 0) 
                 END AS scalar 
             FROM {prefix}_outlier_threshold 
+            WINDOW w AS (PARTITION BY {", ".join(identifiers + groups)})
             """
         ),
     )
