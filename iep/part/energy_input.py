@@ -305,6 +305,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     data = iep.utils.is_outlier(
         data=data,
         table=f"{prefix}_ratio",
+        time=time,
         identifiers=[identifier],
         groups=groups,
         reference="ratio",

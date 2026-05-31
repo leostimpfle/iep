@@ -72,7 +72,7 @@ def load(
             groups=["Facility_INSPIRE_ID", "pollutantCode", "medium"],
         )
         data = _sanitise(data=data)
-        data = _interpolate(data=data)
+        # data = _interpolate(data=data)
     return connection.sql(data.to_sql())
 
 
@@ -167,9 +167,10 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     prefix: str = data.hash
     time: str = "reportingYear"
     identifier: str = _IDENTIFIER
-    target: str = _POLLUTANT_RELEASE
     groups: list[str] = ["pollutantCode", "medium"]
+    target: str = _POLLUTANT_RELEASE
     proxy: str = _POLLUTANT_RELEASE
+    proxies: tuple[str, ...] = ("SOX", "NOX", "PM10", "CO", "NH3")
     data = data.extend(
         name=f"{prefix}_target",
         query=dedent(
@@ -192,7 +193,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             {", ".join(groups)},
             SUM({proxy}) AS proxy 
         FROM {input_name} 
-        WHERE medium = 'AIR' AND pollutantCode IN ('SOX', 'NOX', 'PM10')
+        WHERE medium = 'AIR' AND pollutantCode IN {proxies} 
         GROUP BY ALL
         """,
     )
@@ -218,6 +219,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     data = iep.utils.is_outlier(
         data=data,
         table=f"{prefix}_ratio",
+        time=time,
         identifiers=[identifier],
         groups=groups + [f"{g}_proxy" for g in groups],
         reference="ratio",
@@ -453,19 +455,13 @@ def _interpolate(data: CteQueue) -> CteQueue:
 
 
 if __name__ == "__main__":
+    raw = _load_raw()
     raw = load(deduplicate=True, sanitise=False)
     sanitised = load(deduplicate=True, sanitise=True)
     pollutant_code = "CO2"
     medium = "AIR"
-    fid = "DK.CAED/000082948.FACILITY"
-    fid = "FR.CAED/13773.FACILITY"
-    fid = "NL.RIVM/000064335.FACILITY"
-    fid = "IT.EEA/2007000625.FACILITY"
     fid = "IT.CAED/660503069.FACILITY"
-    fid = "IT.CAED/660502007.FACILITY"
-    fid = "NL.RIVM/000064335.FACILITY"
-    fid = "IT.EEA/2007000625.FACILITY"
-    fid = "IT.CAED/660503069.FACILITY"
+    fid = "ES.CAED/003519000.FACILITY"
     raw.filter(
         f"""
         Facility_INSPIRE_ID = '{fid}'

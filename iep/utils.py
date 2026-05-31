@@ -208,12 +208,14 @@ def fill(
 def is_outlier(
     data: CteQueue,
     table: str,
+    time: str,
     identifiers: list[str],
     groups: list[str],
     reference: str,
     target: str,
     threshold_quantile: float = 0.99,
     threshold_outlier: float = 2.0,
+    window: int = 2,
 ) -> CteQueue:
     prefix: str = data.hash
     data = data.extend(
@@ -221,16 +223,17 @@ def is_outlier(
         query=dedent(
             f"""SELECT
                 *,
-                QUANTILE_CONT({reference}, {threshold_quantile}) FILTER({reference} > 0.0) OVER w AS _upper,
-                QUANTILE_CONT({reference}, {1 - threshold_quantile}) FILTER({reference} > 0.0) OVER w _lower,
-                CASE
-                   WHEN {reference} > 0.0 
-                   THEN LOG10({reference} / _upper) > LOG10({threshold_outlier})
-                    OR LOG10({reference} / _lower) < LOG10({threshold_outlier})
-                   ELSE FALSE
-                END AS is_reference_outlier
+                MEDIAN({reference}) OVER w_unit AS {reference}_median,
+                STDDEV({reference}) OVER w_unit AS {reference}_std,
+                MEDIAN({target}) OVER w_unit AS {target}_median,
+                QUANTILE_CONT({reference}, {threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_upper,
+                QUANTILE_CONT({reference}, {1 - threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_lower,
+                -- reference outside of quantiles of full sample 
+                {reference} BETWEEN _quantile_lower AND  _quantile_upper is_in_range
             FROM {table}
-            WINDOW w AS (PARTITION BY {", ".join(groups)})
+            WINDOW
+                w_sample AS (PARTITION BY {", ".join(groups)}),
+                w_unit AS (PARTITION BY {", ".join(identifiers + groups)})
             """
         ),
     )
@@ -239,17 +242,33 @@ def is_outlier(
         query=dedent(
             f"""SELECT
                 *,
-                MEDIAN({reference}) FILTER(NOT is_reference_outlier) OVER w AS _median_reference,
-                MEDIAN({target}) FILTER(NOT is_reference_outlier) OVER w AS _median_target,
+                LAG({reference}) OVER w_unit AS {reference}_lag,
+                LEAD({reference}) OVER w_unit AS {reference}_lead,
+                MEDIAN({reference}) FILTER(is_in_range) OVER w_unit AS {reference}_median_filtered,
+                MEDIAN({target}) FILTER(is_in_range) OVER w_unit AS {target}_median_filtered,
                 CASE
-                   WHEN is_reference_outlier
-                    AND ABS(LOG10({target} / _median_target)) > LOG10({threshold_outlier})
-                    AND {reference} > 0.0
-                    AND _median_reference > 0.0
-                    THEN NULLIF(ROUND(LOG10({reference} / _median_reference)), 0) 
-                END AS scalar 
-            FROM {prefix}_outlier_threshold 
-            WINDOW w AS (PARTITION BY {", ".join(identifiers + groups)})
+                    WHEN {reference} > 0.0 AND {reference}_median > 0.0
+                    THEN LOG10({reference} / COALESCE({reference}_median_filtered, {reference}_median))
+                END AS {reference}_to_median, 
+                CASE
+                    WHEN {target} > 0.0 AND {target}_median > 0.0
+                    THEN LOG10({target} / COALESCE({target}_median_filtered, {target}_median))
+                END AS {target}_to_median, 
+                -- reference much larger than median within unit
+                ABS({reference}_to_median) > LOG10({threshold_outlier}) AS is_reference_outlier, 
+                -- target much larger than median within unit
+                ABS({target}_to_median) > LOG10({threshold_outlier}) AS is_target_outlier,
+                CASE
+                   WHEN is_target_outlier AND (is_reference_outlier OR NOT is_in_range)
+                   THEN NULLIF(ROUND({reference}_to_median), 0) 
+                END AS scalar
+            FROM {prefix}_outlier_threshold
+            WINDOW w_unit AS (
+                PARTITION BY {", ".join(identifiers + groups)}
+                ORDER BY {time}
+                ROWS BETWEEN {window} PRECEDING AND {window} FOLLOWING
+                EXCLUDE CURRENT ROW
+            )
             """
         ),
     )
