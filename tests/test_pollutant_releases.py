@@ -42,6 +42,14 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_total_pollutant_quantity_kg=312_000_000,
         sanitised_total_pollutant_quantity_kg=312_000_000,
     ),
+    _Case(
+        facility="ES.CAED/003519000.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2009,
+        raw_total_pollutant_quantity_kg=1_480_000_000,
+        sanitised_total_pollutant_quantity_kg=1_480_000_000,
+    ),
     # TODO: both appear to be wrong? Check LT_1 in EU ETS (https://www.euets.info/installation/LT_1)
     _Case(
         facility="LT.CAED/153009143.FACILITY",
@@ -130,6 +138,22 @@ _CASES: Final[tuple[_Case, ...]] = (
         medium="AIR",
         sanitised_total_pollutant_quantity_kg=146_000_000,
         raw_total_pollutant_quantity_kg=146_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2010,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=1_370_000_000,
+        sanitised_total_pollutant_quantity_kg=1_370_000_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2011,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=112_000_000,
+        sanitised_total_pollutant_quantity_kg=1_120_000_000,
     ),
     _Case(
         facility="LT.CAED/156667399.FACILITY",
