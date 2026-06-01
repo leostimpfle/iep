@@ -383,16 +383,3 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         ),
     )
     return data
-
-
-if __name__ == "__main__":
-    e = load(sanitise=True)
-    fid = "IT.CAED/100401001.PART"
-    fid = "IT.CAED/570162008.PART"
-    fid = "AT.CAED/9008390317877.PART"
-    fid = "ES.CAED/002112001.PART"
-    fid = "ES.CAED/002112001.PART"
-    fid = "NL.RIVM/202419001.PART"
-    e.filter(f"Installation_part_INSPIRE_ID = '{fid}' AND energyInputTJ > 0").aggregate(
-        "reportingYear, fuelInputCode, sum(energyInputTJ) AS t"
-    ).order("reportingYear")

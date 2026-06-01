@@ -170,7 +170,13 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     groups: list[str] = ["pollutantCode", "medium"]
     target: str = _POLLUTANT_RELEASE
     proxy: str = _POLLUTANT_RELEASE
-    proxies: tuple[str, ...] = ("SOX", "NOX", "PM10", "CO", "NH3")
+    proxies: tuple[str, ...] = (
+        "NOX",
+        "CO",
+        # "SOX",
+        # "PM10",
+        "NH3",
+    )
     data = data.extend(
         name=f"{prefix}_target",
         query=dedent(
@@ -261,61 +267,6 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
-    # data = data.extend(
-    #     name=f"{prefix}_jump_target",
-    #     query=iep.utils.is_jump(
-    #         table=f"{prefix}_target",
-    #         time=time,
-    #         identifiers=[identifier] + groups,
-    #         value="target",
-    #         threshold_delta=0.75,
-    #         threshold_range=THRESHOLD_RANGE,
-    #     ),
-    # )
-    # data = data.extend(
-    #     name=f"{prefix}_jump_ratio",
-    #     query=iep.utils.is_jump(
-    #         table=f"{prefix}_ratio",
-    #         time=time,
-    #         identifiers=[identifier] + groups + [f"{g}_proxy" for g in groups],
-    #         value="ratio",
-    #         threshold_delta=0.75,
-    #         threshold_range=THRESHOLD_RANGE,
-    #     ),
-    # )
-    # # Check if ratio for any pollutant jumps
-    # data = data.extend(
-    #     name=f"{prefix}_scalar",
-    #     query=dedent(
-    #         f"""SELECT
-    #             t.{time},
-    #             t.{identifier},
-    #             {", ".join(f"t.{g}" for g in groups)},
-    #             MAX(r.scalar) AS scalar
-    #         FROM {prefix}_jump_target t
-    #         LEFT JOIN {prefix}_jump_ratio r
-    #         USING ({time}, {identifier}, {", ".join(groups)})
-    #         WHERE t.is_jump AND r.is_jump
-    #         GROUP BY ALL
-    #         """
-    #     ),
-    # )
-    # data = data.extend(
-    #     name=f"{prefix}_{input_name}",
-    #     query=dedent(
-    #         f"""SELECT
-    #             t.* REPLACE(
-    #                 CASE
-    #                     WHEN e.scalar NOT NULL THEN {target} * POW(10, e.scalar)
-    #                     ELSE {target}
-    #                 END AS {target}
-    #             )
-    #         FROM {input_name} t
-    #         LEFT JOIN {prefix}_scalar e
-    #         USING ({time}, {identifier}, {", ".join(groups)})
-    #         """
-    #     ),
-    # )
     return data
 
 
@@ -452,38 +403,3 @@ def _interpolate(data: CteQueue) -> CteQueue:
         ),
     )
     return data
-
-
-if __name__ == "__main__":
-    raw = _load_raw()
-    raw = load(deduplicate=True, sanitise=False)
-    sanitised = load(deduplicate=True, sanitise=True)
-    pollutant_code = "CO2"
-    medium = "AIR"
-    fid = "IT.CAED/660503069.FACILITY"
-    fid = "ES.CAED/003519000.FACILITY"
-    raw.filter(
-        f"""
-        Facility_INSPIRE_ID = '{fid}'
-        AND pollutantCode = '{pollutant_code}'
-        AND medium = '{medium}'
-        """
-    ).select("reportingYear, totalPollutantQuantityKg").order("reportingYear")
-    sanitised.filter(
-        f"""
-        Facility_INSPIRE_ID = '{fid}'
-        AND pollutantCode = '{pollutant_code}'
-        AND medium = '{medium}'
-        """
-    ).select("reportingYear, totalPollutantQuantityKg").order("reportingYear")
-
-    # %%
-    raw.filter("pollutantCode = 'CO2' AND medium = 'AIR'").select(
-        "reportingYear, Facility_INSPIRE_ID, totalPollutantQuantityKg AS raw"
-    ).join(
-        sanitised.filter("pollutantCode = 'CO2' AND medium = 'AIR'").select(
-            "reportingYear, Facility_INSPIRE_ID, totalPollutantQuantityKg AS sanitised"
-        ),
-        condition="reportingYear, Facility_INSPIRE_ID",
-        how="inner",
-    ).filter("raw != sanitised")
