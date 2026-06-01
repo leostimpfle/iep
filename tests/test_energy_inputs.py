@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Final
 
+import duckdb
 import pytest
 from duckdb import DuckDBPyRelation
 
@@ -77,14 +78,18 @@ _CASES: Final[tuple[_Case, ...]] = (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def raw() -> DuckDBPyRelation:
-    return iep.part.energy_input._load_raw()
+    relation = iep.part.energy_input._load_raw()
+    relation.create("raw")
+    return duckdb.table("raw")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
-    return iep.part.energy_input.load(sanitise=True)
+    relation = iep.part.energy_input.load(sanitise=True)
+    relation.create("view")
+    return duckdb.table("view")
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:

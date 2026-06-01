@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Final
 
+import duckdb
 import pytest
 from duckdb import DuckDBPyRelation
 
@@ -174,19 +175,25 @@ _CASES: Final[tuple[_Case, ...]] = (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def raw() -> DuckDBPyRelation:
-    return iep.facility.pollutant_release._load_raw()
+    relation = iep.facility.pollutant_release._load_raw()
+    relation.create("raw")
+    return duckdb.table("raw")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def deduplicated() -> DuckDBPyRelation:
-    return iep.facility.pollutant_release.load(deduplicate=True, sanitise=False)
+    relation = iep.facility.pollutant_release.load(deduplicate=True, sanitise=False)
+    relation.create("deduplicated")
+    return duckdb.table("deduplicated")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
-    return iep.facility.pollutant_release.load(deduplicate=True, sanitise=True)
+    relation = iep.facility.pollutant_release.load(deduplicate=True, sanitise=True)
+    relation.create("sanitised")
+    return duckdb.table("sanitised")
 
 
 def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
