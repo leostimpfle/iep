@@ -24,7 +24,15 @@ _CASES: Final[tuple[_Case, ...]] = (
         pollutant_code="CO2",
         medium="AIR",
         raw_total_pollutant_quantity_kg=1_110_000_000,
-        sanitised_total_pollutant_quantity_kg=110_000,
+        sanitised_total_pollutant_quantity_kg=111_000_000,
+    ),
+    _Case(
+        facility="ES.CAED/003519000.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2007,
+        raw_total_pollutant_quantity_kg=5_130_000_000,
+        sanitised_total_pollutant_quantity_kg=5_130_000_000,
     ),
     _Case(
         facility="ES.CAED/003519000.FACILITY",
@@ -33,6 +41,14 @@ _CASES: Final[tuple[_Case, ...]] = (
         year=2008,
         raw_total_pollutant_quantity_kg=312_000_000,
         sanitised_total_pollutant_quantity_kg=312_000_000,
+    ),
+    _Case(
+        facility="ES.CAED/003519000.FACILITY",
+        pollutant_code="CO2",
+        medium="AIR",
+        year=2009,
+        raw_total_pollutant_quantity_kg=1_480_000_000,
+        sanitised_total_pollutant_quantity_kg=1_480_000_000,
     ),
     # TODO: both appear to be wrong? Check LT_1 in EU ETS (https://www.euets.info/installation/LT_1)
     _Case(
@@ -123,6 +139,38 @@ _CASES: Final[tuple[_Case, ...]] = (
         sanitised_total_pollutant_quantity_kg=146_000_000,
         raw_total_pollutant_quantity_kg=146_000,
     ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2010,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=1_370_000_000,
+        sanitised_total_pollutant_quantity_kg=1_370_000_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2011,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=112_000_000,
+        sanitised_total_pollutant_quantity_kg=1_120_000_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2012,
+        pollutant_code="CO2",
+        medium="AIR",
+        sanitised_total_pollutant_quantity_kg=2_120_000_000,
+        raw_total_pollutant_quantity_kg=212_000_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2019,
+        pollutant_code="CO2",
+        medium="AIR",
+        sanitised_total_pollutant_quantity_kg=2_610_000_000,
+        raw_total_pollutant_quantity_kg=2_610_000_000,
+    ),
 )
 
 
@@ -141,10 +189,8 @@ def sanitised() -> DuckDBPyRelation:
     return iep.facility.pollutant_release.load(deduplicate=True, sanitise=True)
 
 
-_RANGE_DELTA: Final[tuple[int, int]] = (400, 500)
-
-
 def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
+    range_delta: Final[tuple[int, int]] = (150, 250)
     delta = (
         deduplicated.aggregate(
             "reportingYear, Facility_INSPIRE_ID, pollutantCode, medium, SUM(totalPollutantQuantityKg) AS raw"
@@ -159,17 +205,21 @@ def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> N
         .filter("ROUND(raw) != ROUND(sanitised)")
     )
     n_delta = delta.shape[0]
-    assert n_delta > _RANGE_DELTA[0] and n_delta < _RANGE_DELTA[1]
+    assert n_delta > range_delta[0] and n_delta < range_delta[1]
 
 
 @pytest.mark.parametrize("case", _CASES)
 def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
-    test = sanitised.filter(
-        f"""Facility_INSPIRE_ID = '{case.facility}'
-        AND reportingYear = {case.year}
-        AND pollutantCode = '{case.pollutant_code}'
-        AND medium = '{case.medium}'
-        --AND ROUND(totalPollutantQuantityKg) = ROUND({case.sanitised_total_pollutant_quantity_kg})
-        """
-    )
-    assert test.shape[0] == 1
+    actual: list[tuple[float, ...]] = (
+        sanitised.filter(
+            f"""Facility_INSPIRE_ID = '{case.facility}'
+            AND reportingYear = {case.year}
+            AND pollutantCode = '{case.pollutant_code}'
+            AND medium = '{case.medium}'
+            """
+        )
+        .select("totalPollutantQuantityKg")
+        .fetchall()
+    )  # ty:ignore[invalid-assignment]
+    assert actual is not None and len(actual) == 1
+    assert actual[0][0] == case.sanitised_total_pollutant_quantity_kg

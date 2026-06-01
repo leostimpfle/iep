@@ -87,10 +87,8 @@ def sanitised() -> DuckDBPyRelation:
     return iep.part.energy_input.load(sanitise=True)
 
 
-_RANGE_DELTA: Final[tuple[int, int]] = (200, 300)
-
-
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
+    range_delta: Final[tuple[int, int]] = (700, 800)
     delta = (
         raw.aggregate(
             "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
@@ -105,7 +103,7 @@ def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
         .filter("ROUND(raw) != ROUND(sanitised)")
     )
     n_delta = delta.shape[0]
-    assert n_delta > _RANGE_DELTA[0] and n_delta < _RANGE_DELTA[1]
+    assert n_delta > range_delta[0] and n_delta < range_delta[1]
 
 
 @pytest.mark.parametrize("case", _CASES)
