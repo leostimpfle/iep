@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import duckdb
 import splink
 import splink.blocking_rule_library as br
@@ -5,6 +7,8 @@ import splink.comparison_level_library as cll
 import splink.comparison_library as cl
 
 import iep
+from iep.config import PATH_PACKAGE
+from iep.versions import stack_versions
 
 
 def clean(column: str, remove: list[str] | None = None) -> str:
@@ -18,7 +22,28 @@ def clean(column: str, remove: list[str] | None = None) -> str:
 
 
 connection = duckdb.connect()
-facilities = iep.facility.facility.load(connection=connection)
+facilities = stack_versions(
+    loader=iep.facility.facility._load_raw, reload=False, connection=connection
+)
+# Take first non-null value by Facility_INSPIRE_ID (this reduces the risks of values changing between years for duplicates, e.g. `parentCompanyName`)
+facilities = connection.sql(
+    """SELECT
+        Facility_INSPIRE_ID,
+        ANY_VALUE(COLUMNS(* EXCLUDE Facility_INSPIRE_ID) ORDER BY reportingYear)
+    FROM facilities
+    GROUP BY Facility_INSPIRE_ID
+    """
+)
+# Add NACE industry code
+facilities = facilities.join(
+    iep.facility.function.load(connection=connection).aggregate(
+        """Facility_INSPIRE_ID,
+        MAX(NACEMainEconomicActivityCode) AS NACEMainEconomicActivityCode
+        """
+    ),
+    condition="Facility_INSPIRE_ID",
+    how="left",
+)
 pollutants = iep.facility.pollutant_release._load_raw(
     reload=False, connection=connection
 )
@@ -66,8 +91,30 @@ settings = splink.SettingsCreator(
         )
     ],
     comparisons=[
-        cl.JaroWinklerAtThresholds("parentCompanyName").configure(
-            term_frequency_adjustments=True
+        # Check parentCompanyName also against nameOfFeature
+        cl.CustomComparison(
+            output_column_name="parentCompanyName",
+            comparison_levels=[
+                cll.NullLevel("parentCompanyName"),
+                cll.CustomLevel(
+                    label_for_charts="Eaxact match",
+                    sql_condition="""parentCompanyName_l = parentCompanyName_r
+                    OR nameOfFeature_l = parentCompanyName_r
+                    OR parentCompanyName_l = nameOfFeature_r
+                    """,
+                ),
+                *(
+                    cll.CustomLevel(
+                        label_for_charts="Jaro-Winkler ",
+                        sql_condition=f"""jaro_winkler_similarity(parentCompanyName_l, parentCompanyName_r) > {threshold}
+                        OR jaro_winkler_similarity(nameOfFeature_l, parentCompanyName_r) > {threshold}
+                        OR jaro_winkler_similarity(parentCompanyName_l, nameOfFeature_r) > {threshold}
+                        """,
+                    )
+                    for threshold in [0.9, 0.7]
+                ),
+                cll.ElseLevel(),
+            ],
         ),
         cl.JaroWinklerAtThresholds("nameOfFeature").configure(
             term_frequency_adjustments=True
@@ -166,16 +213,51 @@ for rule in [
         blocking_rule=rule,
     )
 
-linker.visualisations.match_weights_chart().save(  # ty:ignore[unresolved-attribute]
-    r"/Users/leonardstimpfle/Downloads/deduplication.html"
+prediction = linker.inference.predict(threshold_match_probability=0.90)
+# Get best match for each right-hand side facility
+best_match = prediction.as_duckdbpyrelation().aggregate(
+    """Facility_INSPIRE_ID_r AS Facility_INSPIRE_ID_cluster,
+    ARG_MAX(Facility_INSPIRE_ID_l, match_weight) AS Facility_INSPIRE_ID,
+    ARG_MAX(match_probability, match_weight) AS match_probability 
+    """
 )
-prediction = linker.inference.predict(threshold_match_probability=0.75)
-filtered = (
-    prediction.as_duckdbpyrelation()
-    # .filter(f"Facility_INSPIRE_ID_l IN {fids}")
-    .filter(
-        f"Facility_INSPIRE_ID_l = 'https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100125'"
+# Enforce one-to-one matching
+best_match = connection.sql(
+    """SELECT
+        Facility_INSPIRE_ID_cluster,
+        Facility_INSPIRE_ID
+    FROM best_match
+    WHERE NOT Facility_INSPIRE_ID IN (
+        SELECT DISTINCT Facility_INSPIRE_ID_cluster FROM best_match
     )
+    """
+).order("Facility_INSPIRE_ID_cluster")
+best_match.to_csv(Path(PATH_PACKAGE, "facility", "deduplication.csv").as_posix())
+
+# %% clustering
+# clusters = linker.clustering.cluster_pairwise_predictions_at_threshold(
+#     prediction, threshold_match_probability=0.75
+# )
+# output = (
+#     clusters.as_duckdbpyrelation()
+#     .select(
+#         """*,
+#         ARG_MAX(Facility_INSPIRE_ID, year_last) OVER (PARTITION BY cluster_id) AS Facility_INSPIRE_ID_cluster,
+#         COUNT(*) OVER (PARTITION BY cluster_id) AS counts
+#         """
+#     )
+#     .filter("counts BETWEEN 1 AND 3")
+#     .select("cluster_id, Facility_INSPIRE_ID_cluster, Facility_INSPIRE_ID")
+# )
+# output.to_csv(Path(PATH_PACKAGE, "facility", "deduplication.csv").as_posix())
+
+# %% visualisation
+linker.visualisations.match_weights_chart()
+p = linker.inference.predict(threshold_match_probability=0.3)
+fid = "IT.CAED/880442001.FACILITY"
+filtered = (
+    p.as_duckdbpyrelation()
+    .filter(f"Facility_INSPIRE_ID_r = '{fid}'")
     .order("match_probability DESC")
     .df()
     .to_dict("records")

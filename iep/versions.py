@@ -5,7 +5,7 @@ from typing import Final, Protocol
 import duckdb
 from _duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_IEP, VERSION
+from iep.config import PATH_IEP, VERSION, Version
 from iep.utils import read_duckdb
 
 _METADATA_NAME: Final[str] = "_VERSION_METADATA"
@@ -50,12 +50,11 @@ def _stack(
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    versions = (p.stem for p in PATH_IEP.iterdir() if p.is_dir())
     data = (
-        loader(version=version, reload=reload, connection=connection).select(
+        loader(version=version.value, reload=reload, connection=connection).select(
             f"*, '{version}' AS version"
         )
-        for version in versions
+        for version in Version
     )
     return reduce(lambda left, right: left.union(right), data)
 
