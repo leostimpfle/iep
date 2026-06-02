@@ -75,6 +75,22 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=2_885.988,
         sanitised_energy_input_tj=28.85988,
     ),
+    _Case(
+        installation_part="ES.CAED/002928000.PART",
+        year=2018,
+        raw_fuel_input_code="Coal",
+        sanitised_fuel_input_code="Coal",
+        raw_energy_input_tj=13.63,
+        sanitised_energy_input_tj=1_363,
+    ),
+    _Case(
+        installation_part="ES.CAED/002928001.PART",
+        year=2018,
+        raw_fuel_input_code="Coal",
+        sanitised_fuel_input_code="Coal",
+        raw_energy_input_tj=26.545,
+        sanitised_energy_input_tj=26_545,
+    ),
 )
 
 
