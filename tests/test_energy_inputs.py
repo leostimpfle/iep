@@ -81,15 +81,15 @@ _CASES: Final[tuple[_Case, ...]] = (
 @pytest.fixture(scope="session")
 def raw() -> DuckDBPyRelation:
     relation = iep.part.energy_input._load_raw()
-    relation.create("raw")
-    return duckdb.table("raw")
+    relation.create("energy_inputs_raw")
+    return duckdb.table("energy_inputs_raw")
 
 
 @pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
     relation = iep.part.energy_input.load(sanitise=True)
-    relation.create("view")
-    return duckdb.table("view")
+    relation.create("energy_inputs_sanitised")
+    return duckdb.table("energy_inputs_sanitised")
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:

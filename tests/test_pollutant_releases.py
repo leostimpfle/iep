@@ -178,22 +178,22 @@ _CASES: Final[tuple[_Case, ...]] = (
 @pytest.fixture(scope="session")
 def raw() -> DuckDBPyRelation:
     relation = iep.facility.pollutant_release._load_raw()
-    relation.create("raw")
-    return duckdb.table("raw")
+    relation.create("pollutant_releases_raw")
+    return duckdb.table("pollutant_releases_raw")
 
 
 @pytest.fixture(scope="session")
 def deduplicated() -> DuckDBPyRelation:
     relation = iep.facility.pollutant_release.load(deduplicate=True, sanitise=False)
-    relation.create("deduplicated")
-    return duckdb.table("deduplicated")
+    relation.create("pollutant_releases_deduplicated")
+    return duckdb.table("pollutant_releases_deduplicated")
 
 
 @pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
     relation = iep.facility.pollutant_release.load(deduplicate=True, sanitise=True)
-    relation.create("sanitised")
-    return duckdb.table("sanitised")
+    relation.create("pollutant_releases_sanitised")
+    return duckdb.table("pollutant_releases_sanitised")
 
 
 def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
@@ -217,7 +217,7 @@ def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> N
 
 @pytest.mark.parametrize("case", _CASES)
 def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
-    actual: list[tuple[float, ...]] = (
+    actual = (
         sanitised.filter(
             f"""Facility_INSPIRE_ID = '{case.facility}'
             AND reportingYear = {case.year}
@@ -227,6 +227,6 @@ def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
         )
         .select("totalPollutantQuantityKg")
         .fetchall()
-    )  # ty:ignore[invalid-assignment]
+    )
     assert actual is not None and len(actual) == 1
     assert actual[0][0] == case.sanitised_total_pollutant_quantity_kg
