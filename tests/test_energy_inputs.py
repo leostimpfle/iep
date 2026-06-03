@@ -91,6 +91,15 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=26.545,
         sanitised_energy_input_tj=26_545,
     ),
+    # TODO: Scaling doesn't work because `UK.CAED/EW_EA-13608-2.PART` reports 0.0 in 2016
+    # _Case(
+    #     installation_part="UK.CAED/EW_EA-13608-2.PART",
+    #     year=2016,
+    #     raw_fuel_input_code="OtherGases",
+    #     sanitised_fuel_input_code="BlastFurnaceGas",
+    #     raw_energy_input_tj=0.0,
+    #     sanitised_energy_input_tj="3_000",
+    # ),
 )
 
 

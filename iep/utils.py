@@ -378,7 +378,7 @@ def deduplicate(data: CteQueue, level: Level) -> CteQueue:
             f"""SELECT DISTINCT
                 {level.name}_INSPIRE_ID_cluster,
                 {level.name}_INSPIRE_ID
-            FROM read_csv('{Path(PATH_PACKAGE, level.name.lower(), "deduplication.csv")}')
+            FROM read_csv('{Path(PATH_PACKAGE, "_input", f"deduplication_{level.name.lower()}.csv")}')
             """
         ),
     )
