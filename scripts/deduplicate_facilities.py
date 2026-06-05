@@ -160,7 +160,7 @@ if __name__ == "__main__":
                 comparison_levels=[
                     cll.NullLevel("parentCompanyName"),
                     cll.CustomLevel(
-                        label_for_charts="Eaxact match",
+                        label_for_charts="Exact match",
                         sql_condition="""parentCompanyName_l = parentCompanyName_r
                         OR nameOfFeature_l = parentCompanyName_r
                         OR parentCompanyName_l = nameOfFeature_r
