@@ -154,8 +154,8 @@ def _standardise_fuels(data: CteQueue) -> CteQueue:
                 Installation_Part_INSPIRE_ID,
                 reportingYear,
                 fuelInputCode,
-                otherSolidFuelCode,
-                otherGaseousFuelCode,
+                MAX(otherSolidFuelCode) AS otherSolidFuelCode,
+                MAX(otherGaseousFuelCode) AS otherGaseousFuelCode,
                 SUM(energyInputTJ) AS energyInputTJ
             FROM {data.final}
             GROUP BY ALL
