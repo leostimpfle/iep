@@ -11,70 +11,136 @@ from iep.config import PATH_PACKAGE
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class _Case:
-    facility_inspire_id: str
-    facility_inspire_id_cluster: str
+    identifier: str
+    cluster: str
 
 
-_CASES: Final[tuple[_Case, ...]] = (
+_CASES_FACILITY: Final[tuple[_Case, ...]] = (
     _Case(
-        facility_inspire_id="DE.EEA/16574.FACILITY",
-        facility_inspire_id_cluster="https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100787",
+        identifier="DE.EEA/16574.FACILITY",
+        cluster="https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100787",
     ),
     _Case(
-        facility_inspire_id="IT.EEA/2007000625.FACILITY",
-        facility_inspire_id_cluster="IT.CAED/660503069.FACILITY",
+        identifier="IT.EEA/2007000625.FACILITY",
+        cluster="IT.CAED/660503069.FACILITY",
     ),
     _Case(
-        facility_inspire_id="GB.EEA/EW_EA-360.FACILITY",
-        facility_inspire_id_cluster="UK.CAED/EW_EA-16879.FACILITY",
+        identifier="GB.EEA/EW_EA-360.FACILITY",
+        cluster="UK.CAED/EW_EA-16879.FACILITY",
     ),
     _Case(
-        facility_inspire_id="IT.EEA/2007002367.FACILITY",
-        facility_inspire_id_cluster="IT.CAED/880442001.FACILITY",
+        identifier="IT.EEA/2007002367.FACILITY",
+        cluster="IT.CAED/880442001.FACILITY",
     ),
     _Case(
-        facility_inspire_id="RO.EEA/RO5HD_318.FACILITY",
-        facility_inspire_id_cluster="RO.CAED/106HD0001.FACILITY",
+        identifier="RO.EEA/RO5HD_318.FACILITY",
+        cluster="RO.CAED/106HD0001.FACILITY",
     ),
     _Case(
-        facility_inspire_id="DE.EEA/14-10-46630660001.FACILITY",
-        facility_inspire_id_cluster="https://registry.gdi-de.org/id/de.sn.sax4inspire.pf/70015796",
+        identifier="DE.EEA/14-10-46630660001.FACILITY",
+        cluster="https://registry.gdi-de.org/id/de.sn.sax4inspire.pf/70015796",
     ),
     _Case(
-        facility_inspire_id="IT.EEA/2007000161.FACILITY",
-        facility_inspire_id_cluster="IT.CAED/380722001.FACILITY",
+        identifier="IT.EEA/2007000161.FACILITY",
+        cluster="IT.CAED/380722001.FACILITY",
     ),
     _Case(
-        facility_inspire_id="PL.EEA/02C_002206.FACILITY",
-        facility_inspire_id_cluster="PL.MŚ/000000318.FACILITY",
+        identifier="PL.EEA/02C_002206.FACILITY",
+        cluster="PL.MŚ/000000318.FACILITY",
     ),
     _Case(
-        facility_inspire_id="DE.EEA/17928.FACILITY",
-        facility_inspire_id_cluster="https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100276",
+        identifier="DE.EEA/17928.FACILITY",
+        cluster="https://registry.gdi-de.org/id/de.st.lau.pf.anlagen-ied-euregistry/100276",
     ),
     _Case(
-        facility_inspire_id="PT.EEA/100002393.FACILITY",
-        facility_inspire_id_cluster="PT.CAED/PT.APA05765202.CI",
+        identifier="PT.EEA/100002393.FACILITY",
+        cluster="PT.CAED/PT.APA05765202.CI",
     ),
     _Case(
-        facility_inspire_id="RS.EEA/124088.FACILITY",
-        facility_inspire_id_cluster="RS.SEPA.NRIZ/FACILITY.000000035",
+        identifier="RS.EEA/124088.FACILITY",
+        cluster="RS.SEPA.NRIZ/FACILITY.000000035",
+    ),
+)
+
+_CASES_LCPMAPPING: Final[tuple[_Case, ...]] = (
+    # _Case(
+    #     identifier="RO.EEA/RO0160.FACILITY",
+    # ),
+    _Case(
+        identifier="PL.EEA/PL0361.FACILITY",
+        cluster="PL.MŚ/000000425.FACILITY",
+    ),
+    _Case(
+        identifier="AT.EEA/AT0002.FACILITY",
+        cluster="AT.EEA/20000.00051.FACILITY",
+    ),
+    _Case(
+        identifier="AT.EEA/AT0084.FACILITY",
+        # cluster="AT.CAED/9008390975220.FACILITY", # The unmapped LCP is labelled "Verbund" but it seems to report energy inputs for EVN https://www.gem.wiki/Duernrohr_power_station
+        cluster="AT.EEA/20000.00106.FACILITY",  # Verbund thermal
+    ),
+    _Case(
+        identifier="BG.EEA/BG0005.FACILITY",
+        cluster="BG.CAED/017000006.FACILITY",
+    ),
+    _Case(
+        identifier="LT.EEA/LT0032.FACILITY",
+        cluster="LT.CAED/166451720.FACILITY",
+    ),
+    _Case(
+        identifier="LT.EEA/LT0033.FACILITY",
+        cluster="LT.CAED/166451720.FACILITY",
+    ),
+    _Case(
+        identifier="LT.EEA/LT0126.FACILITY",
+        cluster="LT.CAED/166451720.FACILITY",
+    ),
+    _Case(
+        identifier="FR.EEA/FR0392.FACILITY",
+        cluster="FR.EEA/059.06226.FACILITY",
     ),
 )
 
 
 @pytest.fixture(scope="session")
-def deduplication() -> DuckDBPyRelation:
-    relation = duckdb.read_csv(Path(PATH_PACKAGE, "facility", "deduplication.csv"))
-    relation.create("deduplication")
-    return duckdb.table("deduplication")
+def deduplication_facility() -> DuckDBPyRelation:
+    relation = duckdb.read_csv(
+        Path(PATH_PACKAGE, "_input", "deduplication_facility.csv")
+    )
+    relation.create("deduplication_facility")
+    return duckdb.table("deduplication_facility")
 
 
-@pytest.mark.parametrize("case", _CASES)
-def test_deduplication(case: _Case, deduplication: DuckDBPyRelation) -> None:
-    expected = case.facility_inspire_id_cluster
+@pytest.fixture(scope="session")
+def deduplication_lcpmapping() -> DuckDBPyRelation:
+    relation = duckdb.read_csv(
+        Path(PATH_PACKAGE, "_input", "deduplication_lcpmapping.csv")
+    )
+    relation.create("deduplication_lcp")
+    return duckdb.table("deduplication_lcp")
+
+
+@pytest.mark.parametrize("case", _CASES_FACILITY)
+def test_deduplication_facility_inspire_id(
+    case: _Case, deduplication_facility: DuckDBPyRelation
+) -> None:
+    expected = case.cluster
     actual = (
-        deduplication.filter(f"Facility_INSPIRE_ID = '{case.facility_inspire_id}'")
+        deduplication_facility.filter(f"Facility_INSPIRE_ID = '{case.identifier}'")
+        .select("Facility_INSPIRE_ID_cluster")
+        .fetchone()
+    )
+    assert actual is not None
+    assert actual[0] == expected
+
+
+@pytest.mark.parametrize("case", _CASES_LCPMAPPING)
+def test_deduplication_lcpmapping(
+    case: _Case, deduplication_lcpmapping: DuckDBPyRelation
+) -> None:
+    expected = case.cluster
+    actual = (
+        deduplication_lcpmapping.filter(f"Facility_INSPIRE_ID = '{case.identifier}'")
         .select("Facility_INSPIRE_ID_cluster")
         .fetchone()
     )

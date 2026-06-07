@@ -47,19 +47,20 @@ def _load_site(
 def load(
     include_name: bool = True,
     case_sensitive: bool = True,
+    version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
     frames: Final[dict[Level, DuckDBPyRelation]] = {
-        Level.Site: _load_site(reload=reload, connection=connection),
+        Level.Site: _load_site(version=version, reload=reload, connection=connection),
         Level.Facility: iep.facility.facility._load_raw(
-            reload=reload, connection=connection
+            version=version, reload=reload, connection=connection
         ),
         Level.Installation: iep.installation.installation.load(
-            reload=reload, connection=connection
+            version=version, reload=reload, connection=connection
         ),
         Level.Installation_Part: iep.part.part.load(
-            reload=reload, connection=connection
+            version=version, reload=reload, connection=connection
         ),
     }
     columns = _get_columns(level=Level.Site, include_name=include_name)
