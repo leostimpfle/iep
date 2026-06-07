@@ -217,6 +217,13 @@ def is_outlier(
     threshold_outlier: float = 2.0,
     window: int = 2,
 ) -> CteQueue:
+    """Flag `target` outliers based on two conditions:
+
+    `target` deviates extremely form within-unit median (`threshold_outlier`)
+    `reference`
+        deviates extremely from within-unit median (`threshold_outlier`)
+        or outside quantile range (`threshold_quantile`)
+    """
     prefix: str = data.hash
     data = data.extend(
         name=f"{prefix}_outlier_threshold",
@@ -229,7 +236,7 @@ def is_outlier(
                 QUANTILE_CONT({reference}, {threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_upper,
                 QUANTILE_CONT({reference}, {1 - threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_lower,
                 -- reference outside of quantiles of full sample 
-                {reference} BETWEEN _quantile_lower AND  _quantile_upper is_in_range
+                {reference} BETWEEN _quantile_lower AND _quantile_upper is_in_range
             FROM {table}
             WINDOW
                 w_sample AS (PARTITION BY {", ".join(groups + [time])}),
@@ -244,17 +251,14 @@ def is_outlier(
                 *,
                 LAG({reference}) OVER w_unit AS {reference}_lag,
                 LEAD({reference}) OVER w_unit AS {reference}_lead,
-                --MEDIAN({reference}) FILTER(is_in_range) OVER w_unit AS {reference}_median_filtered,
-                --MEDIAN({target}) FILTER(is_in_range) OVER w_unit AS {target}_median_filtered,
+                0.1 / {threshold_outlier} AS ratio_floor,  -- this captures zeroes
                 CASE
-                    WHEN {reference} > 0.0 AND {reference}_median > 0.0
-                    --THEN LOG10({reference} / COALESCE({reference}_median_filtered, {reference}_median))
-                    THEN LOG10({reference} / {reference}_median)
+                    WHEN {reference} NOT NULL AND {reference}_median > 0.0
+                    THEN LOG10(GREATEST({reference} / {reference}_median, ratio_floor))
                 END AS {reference}_to_median, 
                 CASE
-                    WHEN {target} > 0.0 AND {target}_median > 0.0
-                    --THEN LOG10({target} / COALESCE({target}_median_filtered, {target}_median))
-                    THEN LOG10({target} / {target}_median)
+                    WHEN {target} NOT NULL AND {target}_median > 0.0
+                    THEN LOG10(GREATEST({target} / {target}_median, ratio_floor))
                 END AS {target}_to_median, 
                 -- reference much larger than median within unit
                 ABS({reference}_to_median) > LOG10({threshold_outlier}) AS is_reference_outlier, 

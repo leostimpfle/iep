@@ -178,6 +178,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     target: str = _ENERGY_INPUT
     groups: list[str] = ["pollutantCode"]
     proxy: str = "totalPollutantQuantityTNE"
+    threshold_outlier: float = 2.0
     # Calculate log delta
     data = data.extend(
         name=f"{prefix}_with_log_delta",
@@ -250,8 +251,8 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {", ".join(f"proxy.{g}" for g in groups)},
                 target.target,
                 CASE
-                    WHEN target.target > 0.0
-                    THEN proxy.proxy / target.target
+                    WHEN proxy.proxy > 0.0
+                    THEN  target.target / proxy.proxy 
                 END AS ratio
             FROM {prefix}_target target
             LEFT JOIN {prefix}_proxy proxy
@@ -310,7 +311,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         reference="ratio",
         target="target",
         threshold_quantile=0.99,
-        threshold_outlier=2.0,
+        threshold_outlier=threshold_outlier,
     )
     # Get outlier year-identifier pairs (aggregate across pollutantCodes)
     data = data.extend(
@@ -338,13 +339,16 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                     OVER (PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode)
                 AS _median,
                 CASE
-                    WHEN outlier.scalar NOT NULL AND {target} > 0.0 AND _median > 0.0
-                    THEN ROUND(LOG10(_median / {target}), 0)
+                    WHEN outlier.scalar NOT NULL AND _median > 0.0 AND {target} > 0.0 
+                        THEN ROUND(LOG10({target} / _median), 0)
                 END AS _delta_to_median,
                 CASE
+                    -- nonzero target: flag outlier if `_delta_to_median` at least as large as scalar
                     WHEN outlier.scalar NOT NULL AND ABS(_delta_to_median) >= outlier.scalar 
-                    THEN NULLIF(_delta_to_median, 0)
+                        THEN NULLIF(_delta_to_median, 0)
                 END AS scalar_outlier, 
+                -- zero target: flag outlier if `_median` positive (and so large that scaling matters)
+                outlier.scalar NOT NULL AND _median >= 100.0 AND {target} = 0.0 AS zero_outlier 
             FROM {prefix}_with_log_delta_flag
             LEFT JOIN {prefix}_ratio_outlier_scalar outlier
                 USING ({time}, {identifier})
@@ -369,9 +373,12 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 REPLACE(
                     CASE
                         WHEN jump.scalar NOT NULL AND t.is_large_change 
-                            THEN {target} * POW(10, jump.scalar)
+                            THEN {target} / POW(10, jump.scalar)
                         WHEN t.scalar_outlier NOT NULL 
-                            THEN {target} * POW(10, t.scalar_outlier) 
+                            THEN {target} / POW(10, t.scalar_outlier) 
+                        -- outlier but zero cannot be scaled, so set to NULL (can be interpolated later)
+                        WHEN zero_outlier 
+                            THEN NULL
                         ELSE {target}
                     END AS {target}
                 ) 

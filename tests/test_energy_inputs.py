@@ -15,7 +15,7 @@ class _Case:
     raw_fuel_input_code: str
     sanitised_fuel_input_code: str
     raw_energy_input_tj: float
-    sanitised_energy_input_tj: float
+    sanitised_energy_input_tj: float | None
 
 
 _CASES: Final[tuple[_Case, ...]] = (
@@ -91,17 +91,25 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=26.545,
         sanitised_energy_input_tj=26_545,
     ),
-    # _Case(
-    #     installation_part="AT.CAED/9008390477526.PART",
-    #     year=2020,
-    #     raw_fuel_input_code="Biomass",
-    #     sanitised_fuel_input_code="Biomass",
-    #     raw_energy_input_tj=0.0,
-    #     sanitised_energy_input_tj=-99999,
-    # ),
+    _Case(
+        installation_part="AT.CAED/9008390477526.PART",
+        year=2020,
+        raw_fuel_input_code="Biomass",
+        sanitised_fuel_input_code="Biomass",
+        raw_energy_input_tj=0.0,
+        sanitised_energy_input_tj=None,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA06042882.EQUIP",
+        year=2019,
+        raw_fuel_input_code="Biomass",
+        sanitised_fuel_input_code="Biomass",
+        raw_energy_input_tj=0.0,
+        sanitised_energy_input_tj=None,
+    ),
     # _Case(
     #     installation_part="PT.CAED/PT.APA05779642.EQUIP",
-    #     year=2019,
+    #     year=2021,
     #     raw_fuel_input_code="NaturalGas",
     #     sanitised_fuel_input_code="NaturalGas",
     #     raw_energy_input_tj=32.33272177,
@@ -117,19 +125,20 @@ _CASES: Final[tuple[_Case, ...]] = (
     # ),
     # _Case(
     #     installation_part="PT.CAED/PT.APA06042862.EQUIP",
-    #     year=2021,
+    #     year=2022,
     #     raw_fuel_input_code="NaturalGas",
     #     sanitised_fuel_input_code="NaturalGas",
     #     raw_energy_input_tj=0.480426606268,
     #     sanitised_energy_input_tj=0.480426606268,
     # ),
+    # TODO: Installation_Part emissions also zero; need Facility to check
     # _Case(
     #     installation_part="ES.CAED/003378000.PART",
     #     year=2021,
     #     raw_fuel_input_code="Biomass",
     #     sanitised_fuel_input_code="Biomass",
     #     raw_energy_input_tj=0.0,
-    #     sanitised_energy_input_tj=-99999,
+    #     sanitised_energy_input_tj=None,
     # ),
     # TODO: 2016 reporting incorrectly groups Biomass and LiquidFuels; probably no way to fix this programatically
     # _Case(
@@ -196,4 +205,7 @@ def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
         .fetchall()
     )
     assert actual is not None and len(actual) == 1
-    assert round(actual[0][0]) == round(case.sanitised_energy_input_tj)
+    if case.sanitised_energy_input_tj is None:
+        assert actual[0][0] is None
+    else:
+        assert round(actual[0][0]) == round(case.sanitised_energy_input_tj)
