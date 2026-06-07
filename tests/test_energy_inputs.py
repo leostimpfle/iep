@@ -107,6 +107,14 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=0.0,
         sanitised_energy_input_tj=None,
     ),
+    _Case(
+        installation_part="https://registry.gdi-de.org/id/de.hb/de.hb.pf.bube-eureg.06-04-11/2001178/8/2-3000",
+        year=2019,
+        raw_fuel_input_code="OtherGases",
+        sanitised_fuel_input_code="BlastFurnaceGas",
+        raw_energy_input_tj=0.0,
+        sanitised_energy_input_tj=None,
+    ),
     # _Case(
     #     installation_part="PT.CAED/PT.APA05779642.EQUIP",
     #     year=2021,
