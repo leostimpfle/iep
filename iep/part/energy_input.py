@@ -184,32 +184,32 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         name=f"{prefix}_with_log_delta",
         query=dedent(
             f"""SELECT
-                    *,
-                    LAG({target}) OVER w AS lagged,
-                    CASE
-                        WHEN {target} > 0.0 AND lagged > 0.0
-                        THEN LOG10({target}) - LOG10(lagged)
-                    END AS log_delta,  
-                FROM {input_name}
-                WINDOW w AS (
-                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
-                    ORDER BY {time} 
-                )
-                """
+                *,
+                LAG({target}) OVER w AS lagged,
+                CASE
+                    WHEN {target} > 0.0 AND lagged > 0.0
+                    THEN LOG10({target}) - LOG10(lagged)
+                END AS log_delta,  
+            FROM {input_name}
+            WINDOW w AS (
+                PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                ORDER BY {time} 
+            )
+            """
         ),
     )
     data = data.extend(
         name=f"{prefix}_with_log_delta_flag",
         query=dedent(
             f"""SELECT
-                    *,
-                    ABS(log_delta) > 0.5 AS is_large_change,
-                    BOOL_OR(is_large_change) OVER w AS has_large_change 
-                FROM {prefix}_with_log_delta
-                WINDOW w AS (
-                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
-                )
-                """
+                *,
+                ABS(log_delta) > 0.5 AS is_large_change,
+                BOOL_OR(is_large_change) OVER w AS has_large_change 
+            FROM {prefix}_with_log_delta
+            WINDOW w AS (
+                PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+            )
+            """
         ),
     )
     # Get emission proxy
@@ -250,9 +250,9 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 target.{identifier},
                 {", ".join(f"proxy.{g}" for g in groups)},
                 target.target,
+                proxy.proxy,
                 CASE
-                    WHEN proxy.proxy > 0.0
-                    THEN  target.target / proxy.proxy 
+                    WHEN proxy.proxy > 0.0 THEN  target.target / proxy.proxy 
                 END AS ratio
             FROM {prefix}_target target
             LEFT JOIN {prefix}_proxy proxy
@@ -313,6 +313,32 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         threshold_quantile=0.99,
         threshold_outlier=threshold_outlier,
     )
+    # Nullify ratio when outlier (for interpolation)
+    data = data.extend(
+        name=f"{prefix}_ratio_outlier_nullified",
+        query=dedent(
+            f"""SELECT
+                *
+                REPLACE(
+                    CASE
+                        WHEN is_target_outlier AND is_reference_outlier
+                        THEN NULL
+                        ELSE ratio
+                    END AS ratio
+                )
+            FROM {prefix}_ratio_outlier
+            """
+        ),
+    )
+    # Interpolate ratio
+    data = iep.utils.interpolate(
+        data=data,
+        table=f"{prefix}_ratio_outlier_nullified",
+        time=time,
+        identifiers=[identifier],
+        groups=groups,
+        target="ratio",
+    )
     # Get outlier year-identifier pairs (aggregate across pollutantCodes)
     data = data.extend(
         name=f"{prefix}_ratio_outlier_scalar",
@@ -320,8 +346,10 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             f"""SELECT
                 {time}, 
                 {identifier},
+                MAX(target) AS total_actual,
+                MEDIAN(ratio * proxy) AS total_inferred,
                 MAX(scalar) AS scalar
-            FROM {prefix}_ratio_outlier
+            FROM {prefix}_ratio_outlier_nullified_interpolated
             WHERE scalar NOT NULL
             GROUP BY ALL
             """
@@ -334,27 +362,32 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         name=f"{prefix}_with_outlier_scalar",
         query=dedent(
             f"""SELECT
-                *,
+                t.*,
                 -- We cannot directly take `outlier.scalar` because this is aggregated across all fuelInputCodes
                 -- Compare to median of surrounding rows within fuelInputCode instead
-                MEDIAN({target}) FILTER (outlier.scalar IS NULL) OVER (
-                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
-                    ORDER BY {time}
-                    ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
-                )
+                MEDIAN({target})
+                    FILTER (outlier.scalar IS NULL)
+                    OVER (
+                        PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                        ORDER BY {time}
+                        ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
+                    )
                 AS _median,
+                -- Difference of observation to local median
                 CASE
                     WHEN outlier.scalar NOT NULL AND _median > 0.0 AND {target} > 0.0 
                         THEN ROUND(LOG10({target} / _median), 0)
                 END AS _delta_to_median,
-                CASE
-                    -- nonzero target: flag outlier if `_delta_to_median` at least as large as scalar
-                    WHEN outlier.scalar NOT NULL AND ABS(_delta_to_median) >= outlier.scalar 
-                        THEN NULLIF(_delta_to_median, 0)
+                -- Nonzero target: get scalar based on local difference to median
+                CASE WHEN outlier.scalar NOT NULL AND ABS(_delta_to_median) >= outlier.scalar
+                    THEN NULLIF(_delta_to_median, 0)
                 END AS scalar_outlier, 
-                -- zero target: flag outlier if `_median` positive (and so large that scaling matters)
-                outlier.scalar NOT NULL AND _median >= 100.0 AND {target} = 0.0 AS zero_outlier 
-            FROM {prefix}_with_log_delta_flag
+                -- Zero target: flag outlier if `_median` positive (and so large that scaling matters)
+                CASE
+                    WHEN outlier.scalar NOT NULL AND _median >= 100.0 AND {target} = 0.0
+                    THEN GREATEST(total_inferred - total_actual, 0.0) 
+                END AS zero_outlier_inferred 
+            FROM {prefix}_with_log_delta_flag t
             LEFT JOIN {prefix}_ratio_outlier_scalar outlier
                 USING ({time}, {identifier})
             """
@@ -373,17 +406,19 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                     has_large_change,
                     _median,
                     _delta_to_median,
-                    scalar_outlier 
+                    scalar_outlier,
+                    zero_outlier_inferred
                 )
                 REPLACE(
                     CASE
-                        -- Scale to address unit errors
+                        -- Scale to fix unit errors
                         WHEN jump.scalar NOT NULL AND t.is_large_change 
                             THEN {target} / POW(10, jump.scalar)
                         WHEN t.scalar_outlier NOT NULL 
                             THEN {target} / POW(10, t.scalar_outlier) 
-                        -- outlier but zero cannot be scaled, so set to NULL (can be interpolated later)
-                        WHEN zero_outlier 
+                        -- Set to value inferred from ratio interpolation if zero 
+                        WHEN zero_outlier_inferred NOT NULL 
+                            --THEN zero_outlier_inferred 
                             THEN NULL
                         ELSE {target}
                     END AS {target}

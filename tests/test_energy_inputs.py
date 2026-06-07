@@ -97,6 +97,7 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_fuel_input_code="Biomass",
         sanitised_fuel_input_code="Biomass",
         raw_energy_input_tj=0.0,
+        # sanitised_energy_input_tj=9618,  # interpolation
         sanitised_energy_input_tj=None,
     ),
     _Case(
@@ -105,14 +106,7 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_fuel_input_code="Biomass",
         sanitised_fuel_input_code="Biomass",
         raw_energy_input_tj=0.0,
-        sanitised_energy_input_tj=None,
-    ),
-    _Case(
-        installation_part="https://registry.gdi-de.org/id/de.hb/de.hb.pf.bube-eureg.06-04-11/2001178/8/2-3000",
-        year=2019,
-        raw_fuel_input_code="OtherGases",
-        sanitised_fuel_input_code="BlastFurnaceGas",
-        raw_energy_input_tj=0.0,
+        # sanitised_energy_input_tj=7140,  # interpolation
         sanitised_energy_input_tj=None,
     ),
     _Case(
@@ -139,12 +133,37 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=0.480426606268,
         sanitised_energy_input_tj=0.480426606268,
     ),
+    _Case(
+        installation_part="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/avn-2017-366044-300-0079450-0100-0130",
+        year=2018,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=0.001,
+        sanitised_energy_input_tj=1_000,
+    ),
+    # TODO: Looks like this should be aggregated with HR.CAED/000000035.PART
+    # _Case(
+    #     installation_part="HR.CAED/000000012.PART",
+    #     year=2017,
+    #     raw_fuel_input_code="Coal",
+    #     sanitised_fuel_input_code="Coal",
+    #     raw_energy_input_tj=3282.74,
+    #     sanitised_energy_input_tj=3282.74,
+    # ),
     # TODO: Installation_Part emissions also zero; need Facility to check
     # _Case(
     #     installation_part="ES.CAED/003378000.PART",
     #     year=2021,
     #     raw_fuel_input_code="Biomass",
     #     sanitised_fuel_input_code="Biomass",
+    #     raw_energy_input_tj=0.0,
+    #     sanitised_energy_input_tj=None,
+    # ),
+    # _Case(
+    #     installation_part="https://registry.gdi-de.org/id/de.hb/de.hb.pf.bube-eureg.06-04-11/2001178/8/2-3000",
+    #     year=2019,
+    #     raw_fuel_input_code="OtherGases",
+    #     sanitised_fuel_input_code="BlastFurnaceGas",
     #     raw_energy_input_tj=0.0,
     #     sanitised_energy_input_tj=None,
     # ),
