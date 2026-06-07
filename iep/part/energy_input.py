@@ -236,7 +236,6 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {identifier},
                 SUM({target}) AS target
             FROM {input_name}
-            WHERE {target} > 0.0
             GROUP BY ALL
             """
         ),
