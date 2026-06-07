@@ -172,14 +172,22 @@ _CASES: Final[tuple[_Case, ...]] = (
         sanitised_total_pollutant_quantity_kg=2_610_000_000,
         raw_total_pollutant_quantity_kg=2_610_000_000,
     ),
-    # _Case(
-    #     facility="FR.CAED/6388.FACILITY",
-    #     year=2020,
-    #     pollutant_code="CO2",
-    #     medium="AIR",
-    #     raw_total_pollutant_quantity_kg=104_000_000_000,
-    #     sanitised_total_pollutant_quantity_kg=104_000_000,
-    # ),
+    _Case(
+        facility="HR.CAED/000000019.FACILITY",
+        year=2017,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=306_000_000,
+        sanitised_total_pollutant_quantity_kg=306_000_000,
+    ),
+    _Case(
+        facility="FR.CAED/6388.FACILITY",
+        year=2020,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=104_000_000_000,
+        sanitised_total_pollutant_quantity_kg=104_000_000,
+    ),
 )
 
 
@@ -237,4 +245,6 @@ def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
         .fetchall()
     )
     assert actual is not None and len(actual) == 1
-    assert actual[0][0] == case.sanitised_total_pollutant_quantity_kg
+    assert actual[0][0] == pytest.approx(
+        case.sanitised_total_pollutant_quantity_kg, abs=1
+    )

@@ -369,10 +369,17 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                     FILTER (outlier.scalar IS NULL)
                     OVER (
                         PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                    )
+                AS _median_global,
+                MEDIAN({target})
+                    FILTER (outlier.scalar IS NULL AND {target} > 0.0)
+                    OVER (
+                        PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
                         ORDER BY {time}
                         ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
                     )
-                AS _median,
+                AS _median_local,
+                COALESCE(_median_local, _median_global) AS _median,
                 -- Difference of observation to local median
                 CASE
                     WHEN outlier.scalar NOT NULL AND _median > 0.0 AND {target} > 0.0 

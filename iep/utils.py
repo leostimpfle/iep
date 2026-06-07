@@ -227,13 +227,10 @@ def is_outlier(
     """
     prefix: str = data.hash
     data = data.extend(
-        name=f"{prefix}_outlier_threshold",
+        name=f"{prefix}_quantile",
         query=dedent(
             f"""SELECT
                 *,
-                MEDIAN({reference}) OVER w_unit AS {reference}_median,
-                STDDEV({reference}) OVER w_unit AS {reference}_std,
-                MEDIAN({target}) OVER w_unit AS {target}_median,
                 QUANTILE_CONT({reference}, {threshold_quantile})
                     FILTER({reference} > 0.0)
                     OVER w_sample
@@ -246,8 +243,32 @@ def is_outlier(
                 {reference} BETWEEN _quantile_lower AND _quantile_upper is_in_range
             FROM {table}
             WINDOW
-                w_sample AS (PARTITION BY {", ".join(groups + [time])}),
-                w_unit AS (PARTITION BY {", ".join(identifiers + groups)})
+                w_sample AS (PARTITION BY {", ".join(groups + [time])})
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_threshold",
+        query=dedent(
+            # Calculate reference and target median (take local if available, otherwise global)
+            f"""SELECT
+                *,
+                MEDIAN({reference}) FILTER(is_in_range) OVER w_global AS {reference}_median_global,
+                MEDIAN({target}) FILTER(is_in_range) OVER w_global AS {target}_median_global,
+                MEDIAN({reference}) FILTER(is_in_range) OVER w_local AS {reference}_median_local,
+                MEDIAN({target}) FILTER(is_in_range) OVER w_local AS {target}_median_local,
+                COALESCE({reference}_median_local, {reference}_median_global) AS {reference}_median,
+                COALESCE({target}_median_local, {target}_median_global) AS {target}_median
+            FROM {prefix}_quantile
+            WINDOW
+                w_global AS (
+                    PARTITION BY {", ".join(identifiers + groups)}
+                ),
+                w_local AS (
+                    PARTITION BY {", ".join(identifiers + groups)}
+                    ORDER BY {time} 
+                    ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING
+                )
             """
         ),
     )
@@ -275,7 +296,7 @@ def is_outlier(
                    WHEN is_target_outlier AND (is_reference_outlier OR NOT is_in_range)
                    THEN NULLIF(ROUND({reference}_to_median), 0) 
                 END AS scalar
-            FROM {prefix}_outlier_threshold
+            FROM {prefix}_threshold
             WINDOW w_unit AS (
                 PARTITION BY {", ".join(identifiers + groups)}
                 ORDER BY {time}
