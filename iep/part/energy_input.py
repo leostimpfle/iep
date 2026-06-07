@@ -335,8 +335,13 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
         query=dedent(
             f"""SELECT
                 *,
-                MEDIAN({target}) FILTER (outlier.scalar IS NULL)
-                    OVER (PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode)
+                -- We cannot directly take `outlier.scalar` because this is aggregated across all fuelInputCodes
+                -- Compare to median of surrounding rows within fuelInputCode instead
+                MEDIAN({target}) FILTER (outlier.scalar IS NULL) OVER (
+                    PARTITION BY {identifier}, fuelInputCode, otherSolidFuelCode, otherGaseousFuelCode
+                    ORDER BY {time}
+                    ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING
+                )
                 AS _median,
                 CASE
                     WHEN outlier.scalar NOT NULL AND _median > 0.0 AND {target} > 0.0 
@@ -355,7 +360,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             """
         ),
     )
-    # Scale energyInputTJ
+    # Sanitise energyInputTJ
     data = data.extend(
         name=f"{prefix}_{input_name}",
         query=dedent(
@@ -372,6 +377,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 )
                 REPLACE(
                     CASE
+                        -- Scale to address unit errors
                         WHEN jump.scalar NOT NULL AND t.is_large_change 
                             THEN {target} / POW(10, jump.scalar)
                         WHEN t.scalar_outlier NOT NULL 

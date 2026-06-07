@@ -115,30 +115,30 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=0.0,
         sanitised_energy_input_tj=None,
     ),
-    # _Case(
-    #     installation_part="PT.CAED/PT.APA05779642.EQUIP",
-    #     year=2021,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=32.33272177,
-    #     sanitised_energy_input_tj=32.33272177,
-    # ),
-    # _Case(
-    #     installation_part="PT.CAED/PT.APA06042862.EQUIP",
-    #     year=2021,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=23.05547423,
-    #     sanitised_energy_input_tj=23.05547423,
-    # ),
-    # _Case(
-    #     installation_part="PT.CAED/PT.APA06042862.EQUIP",
-    #     year=2022,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=0.480426606268,
-    #     sanitised_energy_input_tj=0.480426606268,
-    # ),
+    _Case(
+        installation_part="PT.CAED/PT.APA05779642.EQUIP",
+        year=2021,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=32.33272177,
+        sanitised_energy_input_tj=323.3272177,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA06042862.EQUIP",
+        year=2021,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=23.05547423,
+        sanitised_energy_input_tj=230.5547423,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA06042862.EQUIP",
+        year=2022,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=0.480426606268,
+        sanitised_energy_input_tj=0.480426606268,
+    ),
     # TODO: Installation_Part emissions also zero; need Facility to check
     # _Case(
     #     installation_part="ES.CAED/003378000.PART",
@@ -184,7 +184,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (700, 800)
+    range_delta: Final[tuple[int, int]] = (600, 700)
     raw_agg = raw.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
