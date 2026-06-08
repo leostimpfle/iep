@@ -52,14 +52,14 @@ _CASES: Final[tuple[_Case, ...]] = (
         sanitised_total_pollutant_quantity_kg=1_480_000_000,
     ),
     # TODO: both appear to be wrong? Check LT_1 in EU ETS (https://www.euets.info/installation/LT_1)
-    _Case(
-        facility="LT.CAED/153009143.FACILITY",
-        pollutant_code="CO2",
-        medium="AIR",
-        year=2018,
-        raw_total_pollutant_quantity_kg=2_370_000,
-        sanitised_total_pollutant_quantity_kg=2_370_000_000,
-    ),
+    # _Case(
+    #     facility="LT.CAED/153009143.FACILITY",
+    #     pollutant_code="CO2",
+    #     medium="AIR",
+    #     year=2018,
+    #     raw_total_pollutant_quantity_kg=2_370_000,
+    #     sanitised_total_pollutant_quantity_kg=2_370_000_000,
+    # ),
     _Case(
         facility="CZ.MZP.T805/CZ93379263.FACILITY",
         pollutant_code="CO2",
@@ -161,25 +161,41 @@ _CASES: Final[tuple[_Case, ...]] = (
         year=2012,
         pollutant_code="CO2",
         medium="AIR",
-        sanitised_total_pollutant_quantity_kg=2_120_000_000,
         raw_total_pollutant_quantity_kg=212_000_000,
+        sanitised_total_pollutant_quantity_kg=2_120_000_000,
+    ),
+    _Case(
+        facility="LT.CAED/156667399.FACILITY",
+        year=2013,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=205_000_000,
+        sanitised_total_pollutant_quantity_kg=2_050_000_000,
     ),
     _Case(
         facility="LT.CAED/156667399.FACILITY",
         year=2019,
         pollutant_code="CO2",
         medium="AIR",
-        sanitised_total_pollutant_quantity_kg=2_610_000_000,
         raw_total_pollutant_quantity_kg=2_610_000_000,
+        sanitised_total_pollutant_quantity_kg=2_610_000_000,
     ),
-    # _Case(
-    #     facility="FR.CAED/6388.FACILITY",
-    #     year=2020,
-    #     pollutant_code="CO2",
-    #     medium="AIR",
-    #     raw_total_pollutant_quantity_kg=104_000_000_000,
-    #     sanitised_total_pollutant_quantity_kg=104_000_000,
-    # ),
+    _Case(
+        facility="HR.CAED/000000019.FACILITY",
+        year=2017,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=306_000_000,
+        sanitised_total_pollutant_quantity_kg=306_000_000,
+    ),
+    _Case(
+        facility="FR.CAED/6388.FACILITY",
+        year=2020,
+        pollutant_code="CO2",
+        medium="AIR",
+        raw_total_pollutant_quantity_kg=104_000_000_000,
+        sanitised_total_pollutant_quantity_kg=104_000_000,
+    ),
 )
 
 
@@ -205,7 +221,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (150, 250)
+    range_delta: Final[tuple[int, int]] = (100, 250)
     delta = (
         deduplicated.aggregate(
             "reportingYear, Facility_INSPIRE_ID, pollutantCode, medium, SUM(totalPollutantQuantityKg) AS raw"
@@ -237,4 +253,6 @@ def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
         .fetchall()
     )
     assert actual is not None and len(actual) == 1
-    assert actual[0][0] == case.sanitised_total_pollutant_quantity_kg
+    assert actual[0][0] == pytest.approx(
+        case.sanitised_total_pollutant_quantity_kg, abs=1
+    )

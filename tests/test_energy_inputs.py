@@ -97,6 +97,7 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_fuel_input_code="Biomass",
         sanitised_fuel_input_code="Biomass",
         raw_energy_input_tj=0.0,
+        # sanitised_energy_input_tj=9618,  # interpolation
         sanitised_energy_input_tj=None,
     ),
     _Case(
@@ -105,31 +106,57 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_fuel_input_code="Biomass",
         sanitised_fuel_input_code="Biomass",
         raw_energy_input_tj=0.0,
+        # sanitised_energy_input_tj=7140,  # interpolation
         sanitised_energy_input_tj=None,
     ),
+    _Case(
+        installation_part="UK.CAED/EW_EA-13608-2.PART",
+        year=2016,
+        raw_fuel_input_code="OtherGases",
+        sanitised_fuel_input_code="BlastFurnaceGas",
+        raw_energy_input_tj=0.0,
+        sanitised_energy_input_tj=None,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA05779642.EQUIP",
+        year=2021,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=32.33272177,
+        sanitised_energy_input_tj=323.3272177,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA06042862.EQUIP",
+        year=2021,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=23.05547423,
+        sanitised_energy_input_tj=230.5547423,
+    ),
+    _Case(
+        installation_part="PT.CAED/PT.APA06042862.EQUIP",
+        year=2022,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=0.480426606268,
+        sanitised_energy_input_tj=0.480426606268,
+    ),
+    _Case(
+        installation_part="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/avn-2017-366044-300-0079450-0100-0130",
+        year=2018,
+        raw_fuel_input_code="NaturalGas",
+        sanitised_fuel_input_code="NaturalGas",
+        raw_energy_input_tj=0.001,
+        sanitised_energy_input_tj=1_000,
+    ),
+    # TODO: Looks like this should be aggregated with HR.CAED/000000035.PART
     # _Case(
-    #     installation_part="PT.CAED/PT.APA05779642.EQUIP",
-    #     year=2021,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=32.33272177,
-    #     sanitised_energy_input_tj=32.33272177,
-    # ),
-    # _Case(
-    #     installation_part="PT.CAED/PT.APA06042862.EQUIP",
-    #     year=2021,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=23.05547423,
-    #     sanitised_energy_input_tj=23.05547423,
-    # ),
-    # _Case(
-    #     installation_part="PT.CAED/PT.APA06042862.EQUIP",
-    #     year=2022,
-    #     raw_fuel_input_code="NaturalGas",
-    #     sanitised_fuel_input_code="NaturalGas",
-    #     raw_energy_input_tj=0.480426606268,
-    #     sanitised_energy_input_tj=0.480426606268,
+    #     installation_part="HR.CAED/000000012.PART",
+    #     year=2017,
+    #     raw_fuel_input_code="Coal",
+    #     sanitised_fuel_input_code="Coal",
+    #     raw_energy_input_tj=3282.74,
+    #     sanitised_energy_input_tj=3282.74,
     # ),
     # TODO: Installation_Part emissions also zero; need Facility to check
     # _Case(
@@ -137,6 +164,14 @@ _CASES: Final[tuple[_Case, ...]] = (
     #     year=2021,
     #     raw_fuel_input_code="Biomass",
     #     sanitised_fuel_input_code="Biomass",
+    #     raw_energy_input_tj=0.0,
+    #     sanitised_energy_input_tj=None,
+    # ),
+    # _Case(
+    #     installation_part="https://registry.gdi-de.org/id/de.hb/de.hb.pf.bube-eureg.06-04-11/2001178/8/2-3000",
+    #     year=2019,
+    #     raw_fuel_input_code="OtherGases",
+    #     sanitised_fuel_input_code="BlastFurnaceGas",
     #     raw_energy_input_tj=0.0,
     #     sanitised_energy_input_tj=None,
     # ),
@@ -148,15 +183,6 @@ _CASES: Final[tuple[_Case, ...]] = (
     #     sanitised_fuel_input_code="LiquidFuels",
     #     raw_energy_input_tj=4_236.46,
     #     sanitised_energy_input_tj=-9999,
-    # ),
-    # TODO: Scaling doesn't work because `UK.CAED/EW_EA-13608-2.PART` reports 0.0 in 2016
-    # _Case(
-    #     installation_part="UK.CAED/EW_EA-13608-2.PART",
-    #     year=2016,
-    #     raw_fuel_input_code="OtherGases",
-    #     sanitised_fuel_input_code="BlastFurnaceGas",
-    #     raw_energy_input_tj=0.0,
-    #     sanitised_energy_input_tj="3_000",
     # ),
 )
 
@@ -176,7 +202,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (700, 800)
+    range_delta: Final[tuple[int, int]] = (500, 600)
     raw_agg = raw.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
@@ -208,4 +234,4 @@ def test_sanitise(case: _Case, sanitised: DuckDBPyRelation) -> None:
     if case.sanitised_energy_input_tj is None:
         assert actual[0][0] is None
     else:
-        assert round(actual[0][0]) == round(case.sanitised_energy_input_tj)
+        assert actual[0][0] == pytest.approx(case.sanitised_energy_input_tj, abs=1.0)

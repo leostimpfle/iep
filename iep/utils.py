@@ -219,28 +219,58 @@ def is_outlier(
 ) -> CteQueue:
     """Flag `target` outliers based on two conditions:
 
-    `target` deviates extremely form within-unit median (`threshold_outlier`)
+    `target`
+        deviates extremely form within-unit median (`threshold_outlier`)
     `reference`
         deviates extremely from within-unit median (`threshold_outlier`)
         or outside quantile range (`threshold_quantile`)
     """
     prefix: str = data.hash
     data = data.extend(
-        name=f"{prefix}_outlier_threshold",
+        name=f"{prefix}_quantile",
         query=dedent(
             f"""SELECT
                 *,
-                MEDIAN({reference}) OVER w_unit AS {reference}_median,
-                STDDEV({reference}) OVER w_unit AS {reference}_std,
-                MEDIAN({target}) OVER w_unit AS {target}_median,
-                QUANTILE_CONT({reference}, {threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_upper,
-                QUANTILE_CONT({reference}, {1 - threshold_quantile}) FILTER({reference} > 0.0) OVER w_sample AS _quantile_lower,
+                QUANTILE_CONT({reference}, {threshold_quantile})
+                    FILTER({reference} > 0.0)
+                    OVER w_sample
+                AS _quantile_upper,
+                QUANTILE_CONT({reference}, {1 - threshold_quantile})
+                    FILTER({reference} > 0.0)
+                    OVER w_sample
+                AS _quantile_lower,
                 -- reference outside of quantiles of full sample 
                 {reference} BETWEEN _quantile_lower AND _quantile_upper is_in_range
             FROM {table}
             WINDOW
-                w_sample AS (PARTITION BY {", ".join(groups + [time])}),
-                w_unit AS (PARTITION BY {", ".join(identifiers + groups)})
+                w_sample AS (PARTITION BY {", ".join(groups + [time])})
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_threshold",
+        query=dedent(
+            # Calculate reference and target median (take local if available, otherwise global)
+            f"""SELECT
+                *,
+                --MEDIAN({reference}) FILTER(is_in_range) OVER w_global AS {reference}_median_global,
+                MEDIAN({reference}) OVER w_global AS {reference}_median_global,
+--                 MEDIAN({target}) FILTER(is_in_range) OVER w_global AS {target}_median_global,
+                MEDIAN({target}) OVER w_global AS {target}_median_global,
+                MEDIAN({reference}) FILTER(is_in_range) OVER w_local AS {reference}_median_local,
+                MEDIAN({target}) FILTER(is_in_range) OVER w_local AS {target}_median_local,
+                COALESCE({reference}_median_local, {reference}_median_global) AS {reference}_median,
+                COALESCE({target}_median_local, {target}_median_global) AS {target}_median
+            FROM {prefix}_quantile
+            WINDOW
+                w_global AS (
+                    PARTITION BY {", ".join(identifiers + groups)}
+                ),
+                w_local AS (
+                    PARTITION BY {", ".join(identifiers + groups)}
+                    ORDER BY {time} 
+                    ROWS BETWEEN 4 PRECEDING AND 0 FOLLOWING EXCLUDE CURRENT ROW
+                )
             """
         ),
     )
@@ -264,11 +294,8 @@ def is_outlier(
                 ABS({reference}_to_median) > LOG10({threshold_outlier}) AS is_reference_outlier, 
                 -- target much larger than median within unit
                 ABS({target}_to_median) > LOG10({threshold_outlier}) AS is_target_outlier,
-                CASE
-                   WHEN is_target_outlier AND (is_reference_outlier OR NOT is_in_range)
-                   THEN NULLIF(ROUND({reference}_to_median), 0) 
-                END AS scalar
-            FROM {prefix}_outlier_threshold
+                is_target_outlier AND (is_reference_outlier OR NOT is_in_range) is_outlier
+            FROM {prefix}_threshold
             WINDOW w_unit AS (
                 PARTITION BY {", ".join(identifiers + groups)}
                 ORDER BY {time}
@@ -361,6 +388,65 @@ def sanitise_units(
             LEFT JOIN {prefix}_scalar s
             ON {" AND ".join(f"t.{c} IS NOT DISTINCT FROM s.{c}" for c in groups)}
             AND t.{time} = s.{time}
+            """
+        ),
+    )
+    return data
+
+
+def interpolate(
+    data: CteQueue,
+    table: str,
+    time: str,
+    identifiers: list[str],
+    groups: list[str],
+    target: str,
+) -> CteQueue:
+    data = data.extend(
+        name=f"{table}_bounds",
+        query=dedent(
+            f"""SELECT
+                *,
+                LAST_VALUE({target} IGNORE NULLS) OVER (
+                    w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ) AS {target}_previous,
+                LAST_VALUE(
+                    CASE WHEN {target} IS NOT NULL THEN {time} END IGNORE NULLS
+                ) OVER (
+                    w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ) AS {time}_previous,
+                FIRST_VALUE({target} IGNORE NULLS) OVER (
+                    w ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
+                ) AS {target}_next,
+                FIRST_VALUE(
+                    CASE WHEN {target} IS NOT NULL THEN {time} END IGNORE NULLS
+                ) OVER (
+                    w ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING
+                ) AS {time}_next 
+            FROM {table}
+            WINDOW
+                w AS (
+                    PARTITION BY {", ".join(identifiers + groups)} 
+                    ORDER BY {time} 
+                )
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{table}_interpolated",
+        query=dedent(
+            f"""SELECT
+                * REPLACE(
+                    CASE
+                        WHEN {target} IS NULL
+                        THEN {target}_previous
+                            + ({target}_next - {target}_previous)
+                            * ({time} - {time}_previous)::DOUBLE
+                            / ({time}_next - {time}_previous)::DOUBLE 
+                        ELSE {target}
+                    END AS {target}
+                )
+            FROM {table}_bounds 
             """
         ),
     )
