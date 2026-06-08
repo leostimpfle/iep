@@ -321,9 +321,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 *
                 REPLACE(
                     CASE
-                        WHEN is_target_outlier AND is_reference_outlier
-                        THEN NULL
-                        ELSE ratio
+                        WHEN is_outlier THEN NULL ELSE ratio
                     END AS ratio
                 )
             FROM {prefix}_ratio_outlier
@@ -348,9 +346,8 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {identifier},
                 MAX(target) AS total_actual,
                 MEDIAN(ratio * proxy) AS total_inferred,
-                MAX(scalar) AS scalar
+                NULLIF(ROUND(MEDIAN(ratio_to_median)), 0) AS scalar
             FROM {prefix}_ratio_outlier_nullified_interpolated
-            WHERE scalar NOT NULL
             GROUP BY ALL
             """
         ),
