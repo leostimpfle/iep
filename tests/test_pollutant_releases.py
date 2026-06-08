@@ -221,7 +221,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(deduplicated: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (150, 250)
+    range_delta: Final[tuple[int, int]] = (100, 250)
     delta = (
         deduplicated.aggregate(
             "reportingYear, Facility_INSPIRE_ID, pollutantCode, medium, SUM(totalPollutantQuantityKg) AS raw"

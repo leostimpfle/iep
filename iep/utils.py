@@ -253,8 +253,10 @@ def is_outlier(
             # Calculate reference and target median (take local if available, otherwise global)
             f"""SELECT
                 *,
-                MEDIAN({reference}) FILTER(is_in_range) OVER w_global AS {reference}_median_global,
-                MEDIAN({target}) FILTER(is_in_range) OVER w_global AS {target}_median_global,
+                --MEDIAN({reference}) FILTER(is_in_range) OVER w_global AS {reference}_median_global,
+                MEDIAN({reference}) OVER w_global AS {reference}_median_global,
+--                 MEDIAN({target}) FILTER(is_in_range) OVER w_global AS {target}_median_global,
+                MEDIAN({target}) OVER w_global AS {target}_median_global,
                 MEDIAN({reference}) FILTER(is_in_range) OVER w_local AS {reference}_median_local,
                 MEDIAN({target}) FILTER(is_in_range) OVER w_local AS {target}_median_local,
                 COALESCE({reference}_median_local, {reference}_median_global) AS {reference}_median,
@@ -267,7 +269,7 @@ def is_outlier(
                 w_local AS (
                     PARTITION BY {", ".join(identifiers + groups)}
                     ORDER BY {time} 
-                    ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING
+                    ROWS BETWEEN 4 PRECEDING AND 0 FOLLOWING EXCLUDE CURRENT ROW
                 )
             """
         ),
@@ -292,10 +294,7 @@ def is_outlier(
                 ABS({reference}_to_median) > LOG10({threshold_outlier}) AS is_reference_outlier, 
                 -- target much larger than median within unit
                 ABS({target}_to_median) > LOG10({threshold_outlier}) AS is_target_outlier,
-                CASE
-                   WHEN is_target_outlier AND (is_reference_outlier OR NOT is_in_range)
-                   THEN NULLIF(ROUND({reference}_to_median), 0) 
-                END AS scalar
+                is_target_outlier AND (is_reference_outlier OR NOT is_in_range) is_outlier
             FROM {prefix}_threshold
             WINDOW w_unit AS (
                 PARTITION BY {", ".join(identifiers + groups)}

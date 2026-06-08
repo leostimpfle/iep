@@ -202,7 +202,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (400, 500)
+    range_delta: Final[tuple[int, int]] = (500, 600)
     raw_agg = raw.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
