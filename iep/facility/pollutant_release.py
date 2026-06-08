@@ -79,7 +79,17 @@ def load(
 def _sanitise(data: CteQueue) -> CteQueue:
     data = data.extend(
         name="_sanitise",
-        query=f"SELECT * FROM {data.final} WHERE pollutantCode NOT NULL AND medium NOT NULL",
+        query=dedent(
+            f"""SELECT
+                *
+            FROM {data.final}
+            WHERE pollutantCode NOT NULL
+                AND medium NOT NULL
+            QUALIFY COUNT(totalPollutantQuantityKg) OVER (
+                PARTITION BY reportingYear, Facility_INSPIRE_ID, medium, pollutantCode
+            ) <= 1
+            """
+        ),
     )
     data = _sanitise_proxy(data=data)
     data = _sanitise_biomassco2(data=data)
@@ -167,16 +177,9 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
     prefix: str = data.hash
     time: str = "reportingYear"
     identifier: str = _IDENTIFIER
-    groups: list[str] = ["pollutantCode", "medium"]
+    groups: list[str] = ["medium", "pollutantCode"]
     target: str = _POLLUTANT_RELEASE
     proxy: str = _POLLUTANT_RELEASE
-    proxies: tuple[str, ...] = (
-        "NOX",
-        "CO",
-        # "SOX",
-        # "PM10",
-        "NH3",
-    )
     data = data.extend(
         name=f"{prefix}_target",
         query=dedent(
@@ -184,24 +187,48 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {time},
                 {identifier},
                 {", ".join(groups)},
-                SUM({target}) AS target
+                {target} AS target,
+                MIN({target}) OVER w AS _min_target,
+                MAX({target}) OVER w AS _max_target
             FROM {input_name}
             WHERE pollutantCode = 'CO2' AND medium = 'AIR'
-            GROUP BY ALL
+            WINDOW w AS (PARTITION BY {identifier}, {", ".join(groups)})
+            """
+        ),
+    )
+    data = data.extend(
+        name=f"{prefix}_pollutant_proxies",
+        query=dedent(
+            f"""SELECT
+                {identifier}, 
+                {", ".join(groups)},
+                COUNT(*) AS observations 
+            FROM {input_name}
+            WHERE NOT (pollutantCode = 'CO2' AND medium = 'AIR')
+                AND totalPollutantQuantityKg > 0.0
+            GROUP BY {identifier}, {", ".join(groups)} 
+            HAVING observations > 5 
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY {identifier}
+                -- first releases to AIR, then WATER
+                ORDER BY medium ASC, observations DESC, pollutantCode ASC
+            ) <= 3 
             """
         ),
     )
     data = data.extend(
         name=f"{prefix}_proxy",
-        query=f"""SELECT
-            {time},
-            {identifier},
-            {", ".join(groups)},
-            SUM({proxy}) AS proxy 
-        FROM {input_name} 
-        WHERE medium = 'AIR' AND pollutantCode IN {proxies} 
-        GROUP BY ALL
-        """,
+        query=dedent(
+            f"""SELECT
+                {time},
+                {identifier},
+                {", ".join(groups)},
+                {proxy} AS proxy 
+            FROM {input_name} 
+            INNER JOIN {prefix}_pollutant_proxies
+                USING ({identifier}, {", ".join(groups)})
+            """
+        ),
     )
     data = data.extend(
         name=f"{prefix}_ratio",
@@ -241,13 +268,12 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 {identifier},
                 {", ".join(groups)},
                 SUM(CASE WHEN ratio NOT NULL THEN 1 END) AS ratios,
-                SUM(CASE WHEN scalar NOT NULL THEN 1 END) AS outliers,
+                SUM(CASE WHEN is_outlier NOT NULL THEN 1 END) AS outliers,
                 ratios = outliers AS all_outliers,
-                MAX(scalar) AS scalar 
+                NULLIF(ROUND(MEDIAN(ratio_to_median)), 0) AS scalar
             FROM {prefix}_ratio_outlier
-            WHERE scalar NOT NULL
             GROUP BY ALL
-            --HAVING all_outliers 
+            HAVING all_outliers 
             """
         ),
     )
@@ -257,13 +283,18 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             f"""SELECT
                 t.* REPLACE(
                     CASE
-                        WHEN e.scalar NOT NULL THEN {target} * POW(10, e.scalar)
+                        WHEN e.scalar NOT NULL
+                            -- Scale only if scaled value falls within reasonable range
+                            AND {target} * POW(10, e.scalar) BETWEEN 0.5 * r._min_target AND 1.5 * r._max_target 
+                            THEN {target} * POW(10, e.scalar)
                         ELSE {target}
                     END AS {target}
                 )
             FROM {input_name} t
             LEFT JOIN {prefix}_scalar e
-            USING ({time}, {identifier}, {", ".join(groups)})
+                USING ({time}, {identifier}, {", ".join(groups)})
+            LEFT JOIN {prefix}_target r 
+                USING ({time}, {identifier}, {", ".join(groups)})
             """
         ),
     )
