@@ -13,21 +13,12 @@ import iep
 from iep._eprtr import load_facility as load_eprtr_facility
 from iep._eprtr import load_pollutantrelease as load_eprtr_pollutantrelease
 from iep.config import PATH_PACKAGE, VERSION
+from iep.utils import clean
 
 _START_YEAR: Final[int] = 2007
 _END_YEAR: Final[int] = 2017
 _POLLUTANTS: Final[list[tuple[str, str]]] = [("AIR", "CO2"), ("AIR", "NOX")]
 _N: Final[int] = (_END_YEAR - _START_YEAR + 1) * len(_POLLUTANTS)
-
-
-def clean(column: str, remove: list[str] | None = None) -> str:
-    expression = f"lower({column})"
-    expression = f"trim(regexp_replace({expression}, '[^\\w\\s]', '', 'g'))"
-    for r in remove or []:
-        cleaned_r = f"trim(regexp_replace(lower({r}), '[^\\w\\s]', '', 'g'))"
-        expression = f"replace({expression}, COALESCE({cleaned_r}, ''), '')"
-    expression = f"trim({expression})"
-    return f"NULLIF({expression}, '') AS {column}"
 
 
 def standardise() -> str:
@@ -38,9 +29,9 @@ def standardise() -> str:
         countryCode,
         pointGeometryLat,
         pointGeometryLon,
-        {clean("parentCompanyName", remove=["city"])},
-        {clean("nameOfFeature", remove=["city", "parentCompanyName"])},
-        {clean("mainActivityCode")},
+        {clean("parentCompanyName", remove=["city"])} AS parentCompanyName,
+        {clean("nameOfFeature", remove=["city", "parentCompanyName"])} AS nameOfFeature,
+        {clean("mainActivityCode")} AS mainActivityCode,
         {", ".join(f"trim(lower({c})) AS {c}" for c in columns)},
         releases,
         total_releases

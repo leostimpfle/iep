@@ -40,3 +40,9 @@ eprtr = Path(PATH_INPUT, "e-prtr", "E-PRTR_database_v18.mdb")
 output = Path(eprtr.with_suffix(""))
 output.mkdir(exist_ok=True)
 extract_tables(database=eprtr, output_dir=output)
+
+# %% LCP
+lcp = Path(PATH_INPUT, "lcp", "LCP_database_v3.0.accdb")
+output = Path(lcp.with_suffix(""))
+output.mkdir(exist_ok=True)
+extract_tables(database=lcp, output_dir=output)
