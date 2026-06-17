@@ -1,4 +1,5 @@
 import pathlib
+from textwrap import dedent
 
 import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
@@ -7,6 +8,7 @@ import iep.utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
+    PATH_PACKAGE,
     THRESHOLD_RANGE,
     THRESHOLD_UNIT_ERROR,
     VERSION,
@@ -43,6 +45,7 @@ def _load_raw(
 def load(
     balance: bool = False,
     sanitise: bool = False,
+    add_lcp: bool = True,
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -54,6 +57,8 @@ def load(
             version=version, reload=reload, connection=connection
         ).sql_query(),
     )
+    if add_lcp:
+        data = _add_lcp(data)
     if balance:
         data = iep.utils.balance(
             data=data,
@@ -64,6 +69,51 @@ def load(
         data = _sanitise(data=data)
 
     return connection.sql(data.to_sql())
+
+
+def _add_lcp(data: CteQueue) -> CteQueue:
+    import iep._lcp
+
+    input_name = data.final
+    data = data.extend(name="_lcp_emissions_raw", query=iep._lcp.load().sql_query())
+    data = data.extend(
+        name="_lcp_emissions_mapped",
+        query=dedent(
+            f"""SELECT
+                Installation_Part_INSPIRE_ID,
+                ReferenceYear AS reportingYear,
+                SUM(NOx) AS NOX, 
+                SUM(SO2) AS SO2,
+                SUM(Dust) AS DUST
+            FROM _lcp_emissions_raw
+            INNER JOIN (
+                SELECT * FROM read_csv('{PATH_PACKAGE / "_input" / "links_lcp.csv"}')
+            ) USING (Unique_Plant_ID)
+            GROUP BY ALL
+            """
+        ),
+    )
+    data = data.extend(
+        name="_lcp_emissions_pivoted",
+        query=dedent(
+            """UNPIVOT _lcp_emissions_mapped 
+            ON COLUMNS(* EXCLUDE(Installation_Part_INSPIRE_ID, reportingYear))
+            INTO
+                NAME pollutantCode
+                VALUE totalPollutantQuantityTNE
+            """
+        ),
+    )
+    data = data.extend(
+        name="_lcp_emissions_combined",
+        query=dedent(
+            f"""SELECT * FROM {input_name}
+            UNION BY NAME
+            SELECT * FROM _lcp_emissions_pivoted
+            """
+        ),
+    )
+    return data
 
 
 def _sanitise(data: CteQueue) -> CteQueue:

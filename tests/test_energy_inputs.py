@@ -195,15 +195,22 @@ def raw() -> DuckDBPyRelation:
 
 
 @pytest.fixture(scope="session")
+def processed() -> DuckDBPyRelation:
+    relation = iep.part.energy_input.load(sanitise=False, add_lcp=True)
+    relation.create("energy_inputs_processed")
+    return duckdb.table("energy_inputs_processed")
+
+
+@pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
-    relation = iep.part.energy_input.load(sanitise=True)
+    relation = iep.part.energy_input.load(sanitise=True, add_lcp=True)
     relation.create("energy_inputs_sanitised")
     return duckdb.table("energy_inputs_sanitised")
 
 
-def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (550, 650)
-    raw_agg = raw.aggregate(
+def test_count(processed: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
+    range_delta: Final[tuple[int, int]] = (1250, 1300)
+    raw_agg = processed.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
     sanitised_agg = sanitised.aggregate(
