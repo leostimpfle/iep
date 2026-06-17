@@ -1,3 +1,4 @@
+import uuid
 from pathlib import Path
 from typing import Final
 
@@ -204,21 +205,40 @@ def load_lcpart15(
 def load(
     connection: DuckDBPyConnection = duckdb.default_connection(), reload: bool = False
 ) -> DuckDBPyRelation:
-    connection.register("basic", load_basic_data(connection=connection, reload=reload))
-    connection.register("plant", load_plant(connection=connection, reload=reload))
+    suffix = uuid.uuid4().hex
     connection.register(
-        "details", load_plant_details(connection=connection, reload=reload)
+        f"_basic_{suffix}",
+        load_basic_data(connection=connection, reload=reload),
     )
     connection.register(
-        "energy_inputs", load_energy_inputs(connection=connection, reload=reload)
+        f"_plant_{suffix}",
+        load_plant(connection=connection, reload=reload),
+    )
+    connection.register(
+        f"_details_{suffix}",
+        load_plant_details(connection=connection, reload=reload),
+    )
+    connection.register(
+        f"_energy_inputs_{suffix}",
+        load_energy_inputs(connection=connection, reload=reload),
+    )
+    connection.register(
+        f"_optouts_{suffix}",
+        load_optouts(connection=connection, reload=reload),
+    )
+    connection.register(
+        f"_article15_{suffix}",
+        load_lcpart15(connection=connection, reload=reload),
     )
     data = connection.sql(
-        """SELECT
+        f"""SELECT
             *
-        FROM basic
-        LEFT JOIN plant ON basic.ID = plant.FK_BasicData_ID
-        LEFT JOIN details ON plant.ID = details.FK_Plant_ID 
-        LEFT JOIN energy_inputs ON plant.ID = energy_inputs.FK_Plant_ID
+        FROM _basic_{suffix} 
+        LEFT JOIN _plant_{suffix} ON _basic_{suffix}.ID = _plant_{suffix}.FK_BasicData_ID
+        LEFT JOIN _details_{suffix} ON _plant_{suffix}.ID = _details_{suffix}.FK_Plant_ID 
+        LEFT JOIN _energy_inputs_{suffix} ON _plant_{suffix}.ID = _energy_inputs_{suffix}.FK_Plant_ID
+        LEFT JOIN _optouts_{suffix} ON _plant_{suffix}.ID = _optouts_{suffix}.FK_Plant_ID
+        LEFT JOIN _article15_{suffix} ON _plant_{suffix}.ID = _article15_{suffix}.FK_Plant_ID
         """
     )
     return data
