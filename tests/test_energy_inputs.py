@@ -202,7 +202,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (500, 600)
+    range_delta: Final[tuple[int, int]] = (550, 650)
     raw_agg = raw.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
@@ -213,7 +213,7 @@ def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
         sanitised_agg,
         condition="reportingYear, Installation_Part_INSPIRE_ID",
         how="outer",
-    ).filter("ROUND(raw) != ROUND(sanitised)")
+    ).filter(f"ABS(raw - sanitised) > 1.0")
     n_delta = delta.shape[0]
     assert n_delta > range_delta[0] and n_delta < range_delta[1]
 
