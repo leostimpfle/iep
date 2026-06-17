@@ -9,6 +9,7 @@ import iep.utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
+    PATH_PACKAGE,
     THRESHOLD_RANGE,
     VERSION,
 )
@@ -56,6 +57,7 @@ def _load_raw(
 
 def load(
     sanitise: bool = False,
+    add_lcp: bool = True,
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -67,6 +69,8 @@ def load(
             version=version, reload=reload, connection=connection
         ).sql_query(),
     )
+    if add_lcp:
+        data = _add_lcp(data)
     if sanitise:
         data = _standardise_fuels(data=data)
         data = iep.utils.balance(
@@ -430,6 +434,84 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
             FROM {prefix}_with_outlier_scalar t 
             LEFT JOIN {prefix}_ratio_jump_scalar jump
                 USING ({identifier}, {time})
+            """
+        ),
+    )
+    return data
+
+
+def _add_lcp(data: CteQueue) -> CteQueue:
+    import iep._lcp
+
+    input_name = data.final
+    data = data.extend(name="_lcp_raw", query=iep._lcp.load().sql_query())
+    data = data.extend(
+        name="_lcp_mapped",
+        query=dedent(
+            f"""SELECT
+                Installation_Part_INSPIRE_ID,
+                ReferenceYear AS reportingYear,
+                SUM(Biomass) AS Biomass,
+                SUM(OtherSolidFuels) AS OtherSolidFuels,
+                SUM(LiquidFuels) AS LiquidFuels,
+                SUM(NaturalGas) AS NaturalGas, 
+                SUM(OtherGases) AS OtherGases
+            FROM _lcp_raw
+            INNER JOIN (
+                SELECT * FROM read_csv('{PATH_PACKAGE / "_input" / "links_lcp.csv"}')
+            ) USING (Unique_Plant_ID)
+            GROUP BY ALL
+            """
+        ),
+    )
+    data = data.extend(
+        name="_lcp_pivoted",
+        query=dedent(
+            """UNPIVOT _lcp_mapped 
+            ON COLUMNS(* EXCLUDE(Installation_Part_INSPIRE_ID, reportingYear))
+            INTO
+                NAME fuelInputCode 
+                VALUE energyInputTJ
+            """
+        ),
+    )
+    data = data.extend(
+        name="_lcp_combined",
+        query=dedent(
+            f"""SELECT * FROM {input_name}
+            UNION BY NAME
+            SELECT * FROM _lcp_pivoted
+            """
+        ),
+    )
+    # Map pre-2016 `OtherSolidFuels` to post 2016 codes (Coal/Lignite/Peat)
+    # Only map `OtherSolidFuels` if 2016 code is unique
+    data = data.extend(
+        name="_lcp_map_othersolidfuels",
+        query=dedent(
+            """SELECT
+                Installation_PART_INSPIRE_ID,
+                'OtherSolidFuels' AS fuelInputCode,
+                MAX(fuelInputCode) AS otherSolidFuelCode
+            FROM _lcp_combined
+            WHERE energyInputTJ > 0.0
+              AND reportingYear = 2016
+              AND fuelInputCode IN ('Coal', 'Lignite', 'Peat')
+            GROUP BY Installation_PART_INSPIRE_ID
+            HAVING COUNT(DISTINCT fuelInputCode) = 1
+            """
+        ),
+    )
+    data = data.extend(
+        name="_lcp_enhanced_fuel_code",
+        query=dedent(
+            """SELECT
+                l.* REPLACE(
+                    COALESCE(r.otherSolidFuelCode, l.fuelInputCode) AS fuelInputCode
+                )
+            FROM _lcp_combined l
+            LEFT JOIN _lcp_map_othersolidfuels r
+                USING(Installation_Part_INSPIRE_ID, fuelInputCode) 
             """
         ),
     )

@@ -199,3 +199,26 @@ def load_lcpart15(
         reload=reload,
         connection=connection,
     )
+
+
+def load(
+    connection: DuckDBPyConnection = duckdb.default_connection(), reload: bool = False
+) -> DuckDBPyRelation:
+    connection.register("basic", load_basic_data(connection=connection, reload=reload))
+    connection.register("plant", load_plant(connection=connection, reload=reload))
+    connection.register(
+        "details", load_plant_details(connection=connection, reload=reload)
+    )
+    connection.register(
+        "energy_inputs", load_energy_inputs(connection=connection, reload=reload)
+    )
+    data = connection.sql(
+        """SELECT
+            *
+        FROM basic
+        LEFT JOIN plant ON basic.ID = plant.FK_BasicData_ID
+        LEFT JOIN details ON plant.ID = details.FK_Plant_ID 
+        LEFT JOIN energy_inputs ON plant.ID = energy_inputs.FK_Plant_ID
+        """
+    )
+    return data
