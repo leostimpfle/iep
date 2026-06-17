@@ -13,11 +13,33 @@ from iep.utils import clean
 
 def _load_iep(connection: DuckDBPyConnection) -> DuckDBPyRelation:
     import iep
+    import iep._eprtr
 
     identifiers = iep.identifiers.load(connection=connection)
     facility = iep.facility.facility._load_raw(connection=connection)
     parts = iep.part.part.load(connection=connection)
     energy_input = iep.part.energy_input._load_raw(connection=connection)
+    eprtr = iep._eprtr.load_facility(connection=connection)
+    links_to_eprtr = connection.read_csv(PATH_PACKAGE / "facility" / "links-eprtr.csv")
+    facility = (
+        facility.join(links_to_eprtr, condition="Facility_INSPIRE_ID", how="left")
+        .join(
+            eprtr.select("FacilityID, NationalID").distinct(),
+            condition="FacilityID",
+            how="left",
+        )
+        .select(
+            r"""* REPLACE(
+            CASE
+                WHEN NationalID NOT NULL THEN NationalID
+                ELSE COALESCE(
+                    NULLIF(regexp_extract(Facility_INSPIRE_ID, '/(EW_EA-\d+)\.FACILITY$'), ''),
+                    ProductionFacility_thematicId
+                )
+            END AS NationalID 
+        )"""
+        )
+    )
     energy_input = connection.sql(
         """SELECT
             Installation_Part_INSPIRE_ID,
@@ -55,7 +77,7 @@ def _load_iep(connection: DuckDBPyConnection) -> DuckDBPyRelation:
         .join(
             facility.select(
                 f"""Facility_INSPIRE_ID,
-                {clean("ProductionFacility_thematicId")} AS ProductionFacility_thematicId,
+                {clean("NationalID")} AS ProductionFacility_thematicId,
                 pointGeometryLon,
                 pointGeometryLat,
                 city,
@@ -90,7 +112,10 @@ def _load_lcp(connection: DuckDBPyConnection) -> DuckDBPyRelation:
                 MAX(facility.Latitude) OVER (PARTITION BY facility.Unique_Plant_ID) AS pointGeometryLat,
                 facility.City AS city,
                 facility.PostalCode AS postalCode,
-                basic.MemberState AS countryCode,
+                CASE
+                    WHEN basic.MemberState = 'UK' THEN 'GB'
+                    ELSE basic.MemberState
+                END AS countryCode,
                 details.Refineries AS withinRefinery,
                 regexp_extract(details.DateOfStartOfOperation, '\d{{4}}')::INTEGER AS yearOfStartOfOperation,
                 details.MWth AS totalRatedThermalInput,
@@ -128,28 +153,42 @@ settings = splink.SettingsCreator(
     blocking_rules_to_generate_predictions=[splink.block_on("countryCode")],
     comparisons=[
         cl.ExactMatch("ProductionInstallationPart_thematicId"),
-        # cl.ExactMatch("ProductionFacility_thematicId"),
-        cl.CustomComparison(
-            output_column_name="ProductionFacility_thematicId",
-            comparison_levels=[
-                cll.NullLevel("ProductionFacility_thematicId"),
-                cll.ExactMatchLevel("ProductionFacility_thematicId"),
-                cll.CustomLevel(
-                    label_for_charts="Contains",
-                    sql_condition="""contains(ProductionFacility_thematicId_l, ProductionFacility_thematicId_r)
-                    OR contains(ProductionFacility_thematicId_r, ProductionFacility_thematicId_l)""",
-                ),
-                cll.ElseLevel(),
-            ],
-        ),
+        cl.JaroWinklerAtThresholds("ProductionFacility_thematicId"),
         cl.JaroWinklerAtThresholds("nameOfFeature").configure(
             term_frequency_adjustments=True
         ),
         cl.ExactMatch("withinRefinery").configure(term_frequency_adjustments=True),
-        cl.DistanceInKMAtThresholds(
-            lat_col="pointGeometryLat",
-            long_col="pointGeometryLon",
-            km_thresholds=[0.1, 1.0, 5.0, 10.0, 25.0, 50.0],
+        # cl.DistanceInKMAtThresholds(
+        #     lat_col="pointGeometryLat",
+        #     long_col="pointGeometryLon",
+        #     km_thresholds=[0.1, 1.0, 5.0, 10.0, 25.0, 50.0],
+        # ),
+        cl.CustomComparison(
+            output_column_name="location",
+            comparison_levels=[
+                cll.And(
+                    cll.Or(
+                        cll.NullLevel("pointGeometryLat"),
+                        cll.NullLevel("pointGeometryLon"),
+                    ),
+                    cll.NullLevel("postalCode"),
+                ),
+                cll.DistanceInKMLevel(
+                    lat_col="pointGeometryLat",
+                    long_col="pointGeometryLon",
+                    km_threshold=0.1,
+                ).configure(label_for_charts="Exact"),
+                *(
+                    cll.DistanceInKMLevel(
+                        lat_col="pointGeometryLat",
+                        long_col="pointGeometryLon",
+                        km_threshold=d,
+                    )
+                    for d in [1.0, 5.0, 10.0, 25.0, 50.0]
+                ),
+                cll.Or(cll.ExactMatchLevel("postalCode"), cll.ExactMatchLevel("city")),
+                cll.ElseLevel(),
+            ],
         ),
         cl.CustomComparison(
             output_column_name="totalRatedThermalInput",
@@ -233,17 +272,36 @@ prediction.as_duckdbpyrelation().aggregate(
     Path(PATH_PACKAGE, "_input", "links_lcp.csv").as_posix()
 )
 
-# # %%
-# linker.visualisations.match_weights_chart()
-# unique_id = "SK0135"
-# unique_id = "PL0015"
-# unique_id = "DE1009"
-# p = linker.inference.predict(threshold_match_probability=0.1)
-# filtered = (
-#     p.as_duckdbpyrelation()
-#     .filter(f"unique_id_r = '{unique_id}'")
-#     .order("match_probability DESC")
-#     .df()
-#     .to_dict("records")
-# )
-# linker.visualisations.waterfall_chart(records=filtered)
+# %%
+linker.visualisations.match_weights_chart()
+unique_id = "SK0135"
+unique_id = "PL0015"
+unique_id = "DE1009"
+unique_id = "BG0018"
+p = linker.inference.predict(threshold_match_probability=0.0)
+filtered = (
+    p.as_duckdbpyrelation()
+    .filter(f"unique_id_r = '{unique_id}'")
+    .order("match_probability DESC")
+    .df()
+    .to_dict("records")
+)
+linker.visualisations.waterfall_chart(records=filtered)
+
+
+# %%
+import iep._lcp
+from iep.config import PATH_INPUT
+
+links = duckdb.read_csv(PATH_INPUT / "links_lcp.csv")
+lcp = iep._lcp.load()
+d = lcp.join(
+    links.select("Unique_Plant_ID").distinct(),
+    condition="Unique_Plant_ID",
+    how="anti",
+)
+d.filter("ReferenceYear = 2015").aggregate(
+    """Unique_Plant_ID,
+    SUM(Biomass + OtherSolidFuels + LiquidFuels + NaturalGas + OtherGases) AS energyInputTJ
+    """
+).order("energyInputTJ")
