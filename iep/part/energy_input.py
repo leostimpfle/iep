@@ -256,7 +256,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 target.target,
                 proxy.proxy,
                 CASE
-                    WHEN proxy.proxy > 0.0 THEN  target.target / proxy.proxy 
+                    WHEN proxy.proxy > 0.0 THEN target.target / proxy.proxy 
                 END AS ratio
             FROM {prefix}_target target
             LEFT JOIN {prefix}_proxy proxy
@@ -394,7 +394,7 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 CASE
                     WHEN outlier.scalar NOT NULL AND _median >= 100.0 AND {target} = 0.0
                     THEN GREATEST(total_inferred - total_actual, 0.0) 
-                END AS zero_outlier_inferred 
+                END AS zero_outlier_inferred
             FROM {prefix}_with_log_delta_flag t
             LEFT JOIN {prefix}_ratio_outlier_scalar outlier
                 USING ({time}, {identifier})
@@ -413,6 +413,8 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                     is_large_change,
                     has_large_change,
                     _median,
+                    _median_global,
+                    _median_local,
                     _delta_to_median,
                     scalar_outlier,
                     zero_outlier_inferred
@@ -420,9 +422,16 @@ def _sanitise_proxy(data: CteQueue) -> CteQueue:
                 REPLACE(
                     CASE
                         -- Scale to fix unit errors
-                        WHEN jump.scalar NOT NULL AND t.is_large_change 
+                        WHEN jump.scalar NOT NULL
+                            AND t.is_large_change 
+                            AND {target} / POW(10, jump.scalar)
+                                BETWEEN LEAST(_median_global, _median_local) * 0.1
+                                AND GREATEST(_median_global, _median_local) * 2.0 
                             THEN {target} / POW(10, jump.scalar)
                         WHEN t.scalar_outlier NOT NULL 
+                            AND {target} / POW(10, t.scalar_outlier)
+                                BETWEEN LEAST(_median_global, _median_local) * 0.1
+                                AND GREATEST(_median_global, _median_local) * 2.0 
                             THEN {target} / POW(10, t.scalar_outlier) 
                         -- Set to value inferred from ratio interpolation if zero 
                         WHEN zero_outlier_inferred NOT NULL 

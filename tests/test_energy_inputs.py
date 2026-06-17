@@ -73,7 +73,7 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_fuel_input_code="LiquidFuels",
         sanitised_fuel_input_code="LiquidFuels",
         raw_energy_input_tj=2_885.988,
-        sanitised_energy_input_tj=28.85988,
+        sanitised_energy_input_tj=2.885988,
     ),
     _Case(
         installation_part="ES.CAED/002928000.PART",
@@ -149,6 +149,14 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_energy_input_tj=0.001,
         sanitised_energy_input_tj=1_000,
     ),
+    _Case(
+        installation_part="CZ.CHMI.0049/CZ0049.PART",
+        year=2012,
+        raw_fuel_input_code="LiquidFuels",
+        sanitised_fuel_input_code="LiquidFuels",
+        raw_energy_input_tj=0.1042975,
+        sanitised_energy_input_tj=10.42975,
+    ),
     # TODO: Looks like this should be aggregated with HR.CAED/000000035.PART
     # _Case(
     #     installation_part="HR.CAED/000000012.PART",
@@ -209,7 +217,7 @@ def sanitised() -> DuckDBPyRelation:
 
 
 def test_count(processed: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (1250, 1300)
+    range_delta: Final[tuple[int, int]] = (1200, 1300)
     raw_agg = processed.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
