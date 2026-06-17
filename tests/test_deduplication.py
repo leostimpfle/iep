@@ -60,6 +60,11 @@ _CASES_FACILITY: Final[tuple[_Case, ...]] = (
         identifier="RS.EEA/124088.FACILITY",
         cluster="RS.SEPA.NRIZ/FACILITY.000000035",
     ),
+    # TODO: Facility_INSPIRE_IDs overlap temporally
+    # _Case(
+    #     identifier="HR.EEA/HR010288724.FACILITY",
+    #     cluster="HR.CAED/000000019.FACILITY",
+    # ),
 )
 
 _CASES_LCPMAPPING: Final[tuple[_Case, ...]] = (

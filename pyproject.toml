@@ -19,6 +19,7 @@ dev = [
     "jupyter-console>=6.6.3",
     "pyarrow>=24.0.0",
     "splink>=4.0.16",
+    "vl-convert-python>=1.9.0.post1",
 ]
 lint = [
     "ruff>=0.15.14",

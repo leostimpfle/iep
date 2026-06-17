@@ -11,17 +11,8 @@ from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep
 from iep.config import PATH_PACKAGE
+from iep.utils import clean
 from iep.versions import stack_versions
-
-
-def clean(column: str, remove: list[str] | None = None) -> str:
-    expression = f"lower({column})"
-    expression = f"trim(regexp_replace({expression}, '[^\\w\\s]', '', 'g'))"
-    for r in remove or []:
-        cleaned_r = f"trim(regexp_replace(lower({r}), '[^\\w\\s]', '', 'g'))"
-        expression = f"replace({expression}, COALESCE({cleaned_r}, ''), '')"
-    expression = f"trim({expression})"
-    return f"NULLIF({expression}, '') AS {column}"
 
 
 def load_legal_entity(
@@ -116,8 +107,8 @@ if __name__ == "__main__":
     (
         facilities.select(
             f"""* REPLACE(
-                {clean("parentCompanyName", remove=["city"])},
-                {clean("nameOfFeature", remove=["city", "parentCompanyName"])},
+                {clean("parentCompanyName", remove=["city"])} AS parentCompanyName,
+                {clean("nameOfFeature", remove=["city", "parentCompanyName"])} AS nameOfFeature,
                 lower(city) AS city,
                 lower(postalCode) AS postalCode,
             )"""

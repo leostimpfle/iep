@@ -195,15 +195,22 @@ def raw() -> DuckDBPyRelation:
 
 
 @pytest.fixture(scope="session")
+def processed() -> DuckDBPyRelation:
+    relation = iep.part.energy_input.load(sanitise=False, add_lcp=True)
+    relation.create("energy_inputs_processed")
+    return duckdb.table("energy_inputs_processed")
+
+
+@pytest.fixture(scope="session")
 def sanitised() -> DuckDBPyRelation:
-    relation = iep.part.energy_input.load(sanitise=True)
+    relation = iep.part.energy_input.load(sanitise=True, add_lcp=True)
     relation.create("energy_inputs_sanitised")
     return duckdb.table("energy_inputs_sanitised")
 
 
-def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
-    range_delta: Final[tuple[int, int]] = (500, 600)
-    raw_agg = raw.aggregate(
+def test_count(processed: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
+    range_delta: Final[tuple[int, int]] = (1250, 1300)
+    raw_agg = processed.aggregate(
         "reportingYear, Installation_Part_INSPIRE_ID, SUM(energyInputTJ) AS raw"
     )
     sanitised_agg = sanitised.aggregate(
@@ -213,7 +220,7 @@ def test_count(raw: DuckDBPyRelation, sanitised: DuckDBPyRelation) -> None:
         sanitised_agg,
         condition="reportingYear, Installation_Part_INSPIRE_ID",
         how="outer",
-    ).filter("ROUND(raw) != ROUND(sanitised)")
+    ).filter(f"ABS(raw - sanitised) > 1.0")
     n_delta = delta.shape[0]
     assert n_delta > range_delta[0] and n_delta < range_delta[1]
 

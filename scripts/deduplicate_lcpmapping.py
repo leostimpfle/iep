@@ -7,8 +7,8 @@ import splink.comparison_library as cl
 
 import iep
 from iep.config import PATH_PACKAGE
+from iep.utils import clean
 from scripts.deduplicate_facilities import (
-    clean,
     load_legal_entity,
     strip_legal_suffixes,
 )
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         )
         .select(
             f"""* REPLACE(
-                {clean("parentCompanyName", remove=["city"])},
+                {clean("parentCompanyName", remove=["city"])} AS parentCompanyName,
                 lower(streetName) AS streetName,
                 lower(city) AS city,
                 lower(postalCode) AS postalCode,
@@ -67,10 +67,10 @@ if __name__ == "__main__":
         )
         .select(
             f"""* REPLACE(
-                {clean("parentCompanyName", remove=["city"])},
-                {clean("nameOfFeature", remove=["city", "parentCompanyName"])},
-                {clean("nameOfFeature_Installation_Part", remove=["city", "parentCompanyName", "nameOfFeature"])},
-                {clean("ProductionFacility_thematicId")},
+                {clean("parentCompanyName", remove=["city"])} AS parentCompanyName,
+                {clean("nameOfFeature", remove=["city", "parentCompanyName"])} AS nameOfFeature,
+                {clean("nameOfFeature_Installation_Part", remove=["city", "parentCompanyName", "nameOfFeature"])} AS nameOfFeature_Installation_Part,
+                {clean("ProductionFacility_thematicId")} AS ProductionFacility_thematicId,
                 lower(streetName) AS streetName,
                 lower(city) AS city,
                 lower(postalCode) AS postalCode,
