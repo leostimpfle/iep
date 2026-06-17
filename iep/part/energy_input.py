@@ -495,7 +495,7 @@ def _add_lcp(data: CteQueue) -> CteQueue:
                 MAX(fuelInputCode) AS otherSolidFuelCode
             FROM _lcp_combined
             WHERE energyInputTJ > 0.0
-              AND reportingYear = 2016
+              AND reportingYear IN (2016, 2018)  -- Also check 2018 because of internal IEP mapping
               AND fuelInputCode IN ('Coal', 'Lignite', 'Peat')
             GROUP BY Installation_PART_INSPIRE_ID
             HAVING COUNT(DISTINCT fuelInputCode) = 1
