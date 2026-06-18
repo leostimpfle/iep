@@ -25,7 +25,7 @@ lint = [
     "ruff>=0.15.14",
 ]
 typecheck = [
-    "ty>=0.0.44",
+    "ty>=0.0.50",
 ]
 test = [
     "pytest>=9.0.3",
