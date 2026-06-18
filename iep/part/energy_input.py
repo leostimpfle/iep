@@ -9,7 +9,7 @@ import iep.utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
-    PATH_PACKAGE,
+    PATH_INPUT,
     THRESHOLD_RANGE,
     VERSION,
 )
@@ -58,6 +58,7 @@ def _load_raw(
 def load(
     sanitise: bool = False,
     add_lcp: bool = True,
+    estimate_emissions_co2: bool = True,
     version: str = VERSION,
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -84,6 +85,8 @@ def load(
             ],
         )
         data = _sanitise(data=data)
+    if estimate_emissions_co2:
+        data = _estimate_emissions_co2(data=data)
     return connection.sql(data.to_sql())
 
 
@@ -467,7 +470,7 @@ def _add_lcp(data: CteQueue) -> CteQueue:
                 SUM(OtherGases) AS OtherGases
             FROM _lcp_raw
             INNER JOIN (
-                SELECT * FROM read_csv('{PATH_PACKAGE / "_input" / "links_lcp.csv"}')
+                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp.csv"}')
             ) USING (Unique_Plant_ID)
             GROUP BY ALL
             """
@@ -522,6 +525,90 @@ def _add_lcp(data: CteQueue) -> CteQueue:
             LEFT JOIN _lcp_map_othersolidfuels r
                 USING(Installation_Part_INSPIRE_ID, fuelInputCode) 
             """
+        ),
+    )
+    return data
+
+
+def _estimate_emissions_co2(data: CteQueue) -> CteQueue:
+    prefix = data.hash
+    input_name = data.final
+    ipcc_to_iep_fuel: Final[dict[str, str]] = {
+        "Crude Oil": "LiquidFuels",
+        "Natural Gas Liquids": "LiquidFuels",
+        "Motor Gasoline": "LiquidFuels",
+        "Aviation Gasoline": "LiquidFuels",
+        "Jet Gasoline": "LiquidFuels",
+        "Jet Kerosene": "LiquidFuels",
+        "Other Kerosene": "LiquidFuels",
+        "Shale Oil": "LiquidFuels",
+        "Gas/Diesel Oil": "LiquidFuels",
+        "Residual Fuel Oil": "LiquidFuels",
+        "Liquefied Petroleum Gases": "LPG",
+        "Bitumen": "OtherSolidFuels",
+        "Lubricants": "LiquidFuels",
+        "Petroleum Coke": "Coke",
+        "Refinery Feedstocks": "RefineryGas",
+        "Blast Furnace Gas": "BlastFurnaceGas",
+        "Oxygen Steel Furnace Gas": "OxygenSteel",
+        "Coke Oven Gas": "CokeOvenGas",
+        "Natural Gas": "NaturalGas",
+        "Anthracite": "Coal",
+        "Coking Coal": "Coal",
+        "Other Bituminous Coal": "Coal",
+        "Sub-Bituminous Coal": "Coal",
+        "Lignite": "Lignite",
+        "Oil Shale and Tar Sands": "Tar",
+        "Brown Coal Briquettes": "Coal",
+        "Coke Oven Coke and Lignite Coke": "Coke",
+        "Gas Coke": "CokeOvenGas",
+        "Coal Tar": "Tar",
+        "Patent Fuel": "PatentFuels",
+        "Peat": "Peat",
+        "Wood/Wood Waste": "Biomass",
+        "Sulphite lyes (Black Liquor)": "Biomass",
+        "Municipal Wastes (biomass)": "Biomass",
+        "Other Primary Solid Biomass": "Biomass",
+        "Landfill Gas": "OtherGases",
+        "Ethane": "OtherGases",
+    }
+    data = data.extend(
+        name=f"{prefix}_ipcc_emission_factors",
+        # https://www.ipcc-nggip.iges.or.jp/public/2006gl/
+        query=dedent(
+            f"""SELECT
+                *
+            FROM read_csv('{PATH_INPUT / "ipcc2006_table_2_2.csv"}')
+            """
+        ),
+    )
+    data = data.extend(
+        name="_map_ipcc_to_iep_fuel(ipcc_fuel, fuelInputCode)",
+        query=dedent(
+            f"""VALUES {", ".join(f"('{k}', '{v}')" for k, v in ipcc_to_iep_fuel.items())}"""
+        ),
+    )
+    data = data.extend(
+        name="ef_factors",
+        query=dedent(
+            f"""SELECT
+                    fm.fuelInputCode,
+                    AVG(ef.CO2_Default) / 1000.0 AS emission_factor_tCO2TJ
+                FROM {prefix}_ipcc_emission_factors ef
+                JOIN _map_ipcc_to_iep_fuel fm ON ef.Fuel = fm.ipcc_fuel
+                GROUP BY fm.fuelInputCode
+            """,
+        ),
+    )
+    data = data.extend(
+        name=f"{input_name}_with_emission_estimates",
+        query=dedent(
+            f"""SELECT
+                {input_name}.*,
+                emission_factor_tCO2TJ,
+                energyInputTJ * emission_factor_tCO2TJ AS tCO2
+            FROM {input_name}
+            LEFT JOIN ef_factors USING (fuelInputCode)""",
         ),
     )
     return data
