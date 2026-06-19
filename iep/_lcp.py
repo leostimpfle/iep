@@ -205,40 +205,27 @@ def load_lcpart15(
 def load(
     connection: DuckDBPyConnection = duckdb.default_connection(), reload: bool = False
 ) -> DuckDBPyRelation:
-    suffix = uuid.uuid4().hex
-    connection.register(
-        f"_basic_{suffix}",
-        load_basic_data(connection=connection, reload=reload),
+    basic_data = load_basic_data(connection=connection, reload=reload)
+    plants = load_plant(connection=connection, reload=reload)
+    details = load_plant_details(connection=connection, reload=reload)
+    energy_inputs = load_energy_inputs(connection=connection, reload=reload)
+    optouts = load_optouts(connection=connection, reload=reload)
+    article15 = load_lcpart15(connection=connection, reload=reload)
+    data = basic_data.select("* EXCLUDE(ID), ID AS FK_BasicData_ID").join(
+        plants.select("* EXCLUDE(ID), ID AS FK_Plant_ID"),
+        condition="FK_BasicData_ID",
+        how="left",
     )
-    connection.register(
-        f"_plant_{suffix}",
-        load_plant(connection=connection, reload=reload),
+    data = data.join(
+        details.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
     )
-    connection.register(
-        f"_details_{suffix}",
-        load_plant_details(connection=connection, reload=reload),
+    data = data.join(
+        energy_inputs.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
     )
-    connection.register(
-        f"_energy_inputs_{suffix}",
-        load_energy_inputs(connection=connection, reload=reload),
+    data = data.join(
+        optouts.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
     )
-    connection.register(
-        f"_optouts_{suffix}",
-        load_optouts(connection=connection, reload=reload),
-    )
-    connection.register(
-        f"_article15_{suffix}",
-        load_lcpart15(connection=connection, reload=reload),
-    )
-    data = connection.sql(
-        f"""SELECT
-            *
-        FROM _basic_{suffix} 
-        LEFT JOIN _plant_{suffix} ON _basic_{suffix}.ID = _plant_{suffix}.FK_BasicData_ID
-        LEFT JOIN _details_{suffix} ON _plant_{suffix}.ID = _details_{suffix}.FK_Plant_ID 
-        LEFT JOIN _energy_inputs_{suffix} ON _plant_{suffix}.ID = _energy_inputs_{suffix}.FK_Plant_ID
-        LEFT JOIN _optouts_{suffix} ON _plant_{suffix}.ID = _optouts_{suffix}.FK_Plant_ID
-        LEFT JOIN _article15_{suffix} ON _plant_{suffix}.ID = _article15_{suffix}.FK_Plant_ID
-        """
+    data = data.join(
+        article15.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
     )
     return data
