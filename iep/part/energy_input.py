@@ -99,9 +99,9 @@ def _standardise_fuels(data: CteQueue) -> CteQueue:
         query=dedent(
             f"""SELECT
                 * REPLACE(
-                    {iep.utils.fill(column="furtherDetails", partition_by=partition_by, order_by=order_by, direction="both")} AS furtherDetails,
-                    {iep.utils.fill(column="otherSolidFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherSolidFuelCode,
-                    {iep.utils.fill(column="otherGaseousFuelCode", partition_by=partition_by, order_by=order_by, direction="both")} AS otherGaseousFuelCode
+                    {iep.utils.fill(column="CASE WHEN energyInputTJ > 0.0 THEN furtherDetails END", partition_by=partition_by, order_by=order_by, direction="both")} AS furtherDetails,
+                    {iep.utils.fill(column="CASE WHEN energyInputTJ > 0.0 THEN otherSolidFuelCode END", partition_by=partition_by, order_by=order_by, direction="both")} AS otherSolidFuelCode,
+                    {iep.utils.fill(column="CASE WHEN energyInputTJ > 0.0 THEN otherGaseousFuelCode END", partition_by=partition_by, order_by=order_by, direction="both")} AS otherGaseousFuelCode
                )
             FROM {data.final}
             """,
