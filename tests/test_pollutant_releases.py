@@ -196,6 +196,22 @@ _CASES: Final[tuple[_Case, ...]] = (
         raw_total_pollutant_quantity_kg=104_000_000_000,
         sanitised_total_pollutant_quantity_kg=104_000_000,
     ),
+    # _Case(
+    #     facility="RO.CAED/101DJ0001.FACILITY",
+    #     year=2014,
+    #     pollutant_code="CO2",
+    #     medium="AIR",
+    #     raw_total_pollutant_quantity_kg=2_380_000_000,
+    #     sanitised_total_pollutant_quantity_kg=2_380_000_000,
+    # ),
+    # _Case(
+    #     facility="UK.CAED/EW_EA-67.FACILITY",
+    #     year=2019,
+    #     pollutant_code="CO2EXCLBIOMASS",
+    #     medium="AIR",
+    #     raw_total_pollutant_quantity_kg=12_300_000_000,
+    #     sanitised_total_pollutant_quantity_kg=690_000,
+    # ),
 )
 
 

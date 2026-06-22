@@ -80,12 +80,12 @@ def _add_metadata(
 
 def stack_versions(
     loader: Loader,
+    aggregate_by: set[str],
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
     stacked = _stack(loader=loader, reload=reload, connection=connection)
     stacked = _add_metadata(stacked, reload=reload, connection=connection)
-    aggregate_by = {"reportingYear", "Parent_Site_INSPIRE_ID", "Facility_INSPIRE_ID"}
     order_by = {"reportingYear", "fileId_EUReg", "dateSubmitted", "version"}
     aggregate = [
         column for column in stacked.columns if column not in aggregate_by | order_by

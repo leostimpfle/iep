@@ -210,21 +210,37 @@ def load(
     energy_inputs = load_energy_inputs(connection=connection, reload=reload)
     optouts = load_optouts(connection=connection, reload=reload)
     article15 = load_lcpart15(connection=connection, reload=reload)
-    data = basic_data.select("* EXCLUDE(ID), ID AS FK_BasicData_ID").join(
+    data = basic_data.select("ID AS FK_BasicData_ID, ReferenceYear").join(
         plants.select("* EXCLUDE(ID), ID AS FK_Plant_ID"),
         condition="FK_BasicData_ID",
         how="left",
     )
     data = data.join(
-        details.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
+        details.select(
+            f"""* EXCLUDE({", ".join([c for c in details.columns if c in data.columns and c != "FK_Plant_ID"])})"""
+        ),
+        condition="FK_Plant_ID",
+        how="left",
     )
     data = data.join(
-        energy_inputs.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
+        energy_inputs.select(
+            f"""* EXCLUDE({", ".join([c for c in energy_inputs.columns if c in data.columns and c != "FK_Plant_ID"])})"""
+        ),
+        condition="FK_Plant_ID",
+        how="left",
     )
     data = data.join(
-        optouts.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
+        optouts.select(
+            f"""* EXCLUDE({", ".join([c for c in optouts.columns if c in data.columns and c != "FK_Plant_ID"])})"""
+        ),
+        condition="FK_Plant_ID",
+        how="left",
     )
     data = data.join(
-        article15.select("* EXCLUDE(ID)"), condition="FK_Plant_ID", how="left"
+        article15.select(
+            f"""* EXCLUDE({", ".join([c for c in article15.columns if c in data.columns and c != "FK_Plant_ID"])})"""
+        ),
+        condition="FK_Plant_ID",
+        how="left",
     )
     return data

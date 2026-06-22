@@ -100,7 +100,12 @@ def load(
     reload: bool = False,
     connection: DuckDBPyConnection = duckdb.default_connection(),
 ) -> DuckDBPyRelation:
-    data = stack_versions(loader=_load_raw, reload=reload, connection=connection)
+    data = stack_versions(
+        loader=_load_raw,
+        aggregate_by={"reportingYear", "Parent_Site_INSPIRE_ID", "Facility_INSPIRE_ID"},
+        reload=reload,
+        connection=connection,
+    )
     data = _add_eprtr(data=data, connection=connection, reload=reload)
     data = deduplicate(
         data=CteQueue(ctes=(Cte(name="_raw", query=data.sql_query()),)),

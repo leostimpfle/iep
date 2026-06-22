@@ -59,7 +59,7 @@ def load(
         Level.Installation: iep.installation.installation.load(
             version=version, reload=reload, connection=connection
         ),
-        Level.Installation_Part: iep.part.part.load(
+        Level.Installation_Part: iep.part.part._load_raw(
             version=version, reload=reload, connection=connection
         ),
     }

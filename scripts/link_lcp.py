@@ -17,7 +17,7 @@ def _load_iep(connection: DuckDBPyConnection) -> DuckDBPyRelation:
 
     identifiers = iep.identifiers.load(connection=connection)
     facility = iep.facility.facility._load_raw(connection=connection)
-    parts = iep.part.part.load(connection=connection)
+    parts = iep.part.part._load_raw(connection=connection)
     energy_input = iep.part.energy_input._load_raw(connection=connection)
     eprtr = iep._eprtr.load_facility(connection=connection)
     links_to_eprtr = connection.read_csv(PATH_PACKAGE / "facility" / "links-eprtr.csv")

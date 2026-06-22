@@ -183,6 +183,22 @@ _CASES: Final[tuple[_Case, ...]] = (
     #     raw_energy_input_tj=0.0,
     #     sanitised_energy_input_tj=None,
     # ),
+    # _Case(
+    #     installation_part="CZ.CHMI.0051/CZ0051.PART",
+    #     year=2012,
+    #     raw_fuel_input_code="Lignite",
+    #     sanitised_fuel_input_code="Lignite",
+    #     raw_energy_input_tj=0.0,
+    #     sanitised_energy_input_tj=0.0,
+    # ),
+    # _Case(
+    #     installation_part="CZ.CHMI.0051/CZ0051.PART",
+    #     year=2010,
+    #     raw_fuel_input_code="Lignite",
+    #     sanitised_fuel_input_code="Lignite",
+    #     raw_energy_input_tj=0.0,
+    #     sanitised_energy_input_tj=0.0,
+    # ),
     # TODO: 2016 reporting incorrectly groups Biomass and LiquidFuels; probably no way to fix this programatically
     # _Case(
     #     installation_part="SE.CAED/10000064.Part",
