@@ -55,21 +55,30 @@ def _add_lcp(
 ) -> DuckDBPyRelation:
     import iep._lcp
 
-    lcp_details = iep._lcp.load(connection=connection, reload=reload)
     lcp_links = connection.read_csv(PATH_INPUT / "links_lcp.csv")
-    lcp_details = lcp_details.join(
-        lcp_links, condition="Unique_Plant_ID", how="inner"
-    ).aggregate(
-        """Installation_Part_INSPIRE_ID,
-        ReferenceYear AS reportingYear,
-        SUM(MWth) AS totalRatedThermalInput,
-        MAX(Refineries)::INTEGER AS withinRefinery
-        """
+    lcp_details = (
+        iep._lcp.load(connection=connection, reload=reload)
+        .join(lcp_links, condition="Unique_Plant_ID", how="inner")
+        .aggregate(
+            """Installation_Part_INSPIRE_ID,
+            ReferenceYear AS reportingYear,
+            SUM(MWth) AS totalRatedThermalInput,
+            MAX(Refineries)::INTEGER AS withinRefinery,
+            MAX(OptOutPlant) AS optOutPlant
+            """
+        )
     )
     data = connection.sql(
-        """SELECT * FROM data
-        UNION BY NAME
-        SELECT * FROM lcp_details     
+        """WITH combined AS (
+            SELECT * FROM data
+            UNION BY NAME
+            SELECT * FROM lcp_details
+        )
+        SELECT
+            * REPLACE(
+                COALESCE(optOutPlant, FALSE) AS optOutPlant
+            )
+        FROM combined
         """
     )
     return data
