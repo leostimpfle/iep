@@ -68,6 +68,7 @@ def _add_lcp(
             """
         )
     )
+    connection.register("_lcp_details", lcp_details)
     data = connection.sql(
         """WITH combined AS (
             SELECT * FROM data
