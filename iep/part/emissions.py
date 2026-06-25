@@ -9,7 +9,6 @@ from iep.config import (
     NA_VALUES,
     PATH_IEP,
     PATH_INPUT,
-    PATH_PACKAGE,
     THRESHOLD_RANGE,
     THRESHOLD_UNIT_ERROR,
     VERSION,
