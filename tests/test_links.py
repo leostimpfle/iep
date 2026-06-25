@@ -61,10 +61,10 @@ _LINKS_LCP_FACILITY: Final[tuple[_LinkLcpFacility, ...]] = (
         lcp_identifier="DE0431",
         facility_inspire_id="https://registry.gdi-de.org/id/de.bb.inspire.pf.eureg/45025564",
     ),
-    # _LinkLcpFacility(
-    #     lcp_identifier="DE4108",
-    #     facility_inspire_id="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/arb-2017-362008-300-0326774",
-    # ),
+    _LinkLcpFacility(
+        lcp_identifier="DE4108",
+        facility_inspire_id="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/arb-2017-362008-300-0326774",
+    ),
     _LinkLcpFacility(
         lcp_identifier="FR0084", facility_inspire_id="FR.CAED/5892.FACILITY"
     ),
@@ -72,26 +72,26 @@ _LINKS_LCP_FACILITY: Final[tuple[_LinkLcpFacility, ...]] = (
         lcp_identifier="UK0578",
         facility_inspire_id="UK.SEPA/200000142.Facility",
     ),
-    # _LinkLcpFacility(
-    #     lcp_identifier="EE0102",
-    #     facility_inspire_id="EE.KAUR.TTR/75.FACILITY",
-    # ),
+    _LinkLcpFacility(
+        lcp_identifier="EE0102",
+        facility_inspire_id="EE.KAUR.TTR/75.FACILITY",
+    ),
     _LinkLcpFacility(
         lcp_identifier="EE0100",
         facility_inspire_id="EE.KAUR.TTR/74.FACILITY",
     ),
-    # _LinkLcpFacility(
-    #     lcp_identifier="PT0114",
-    #     facility_inspire_id="PT.CAED/PT.APA05766202.CI",
-    # ),
-    # _LinkLcpFacility(
-    #     lcp_identifier="BG0025",
-    #     facility_inspire_id="BG.CAED/003000003.FACILITY",
-    # ),
-    # _LinkLcpFacility(
-    #     lcp_identifier="DK0119",
-    #     facility_inspire_id="DK.CAED/000104665.FACILITY",
-    # ),
+    _LinkLcpFacility(
+        lcp_identifier="PT0114",
+        facility_inspire_id="PT.CAED/PT.APA05766202.CI",
+    ),
+    _LinkLcpFacility(
+        lcp_identifier="BG0025",
+        facility_inspire_id="BG.CAED/003000003.FACILITY",
+    ),
+    _LinkLcpFacility(
+        lcp_identifier="DK0119",
+        facility_inspire_id="DK.CAED/000104665.FACILITY",
+    ),
 )
 
 
