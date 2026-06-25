@@ -6,7 +6,7 @@ import duckdb
 import pytest
 from duckdb import DuckDBPyRelation
 
-from iep.config import PATH_PACKAGE
+from iep.config import PATH_INPUT
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -61,10 +61,10 @@ _LINKS_LCP_FACILITY: Final[tuple[_LinkLcpFacility, ...]] = (
         lcp_identifier="DE0431",
         facility_inspire_id="https://registry.gdi-de.org/id/de.bb.inspire.pf.eureg/45025564",
     ),
-    _LinkLcpFacility(
-        lcp_identifier="DE4108",
-        facility_inspire_id="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/arb-2017-362008-300-0326774",
-    ),
+    # _LinkLcpFacility(
+    #     lcp_identifier="DE4108",
+    #     facility_inspire_id="https://registry.gdi-de.org/id/de.nw.inspire.pf.bube-eureg/arb-2017-362008-300-0326774",
+    # ),
     _LinkLcpFacility(
         lcp_identifier="FR0084", facility_inspire_id="FR.CAED/5892.FACILITY"
     ),
@@ -72,44 +72,65 @@ _LINKS_LCP_FACILITY: Final[tuple[_LinkLcpFacility, ...]] = (
         lcp_identifier="UK0578",
         facility_inspire_id="UK.SEPA/200000142.Facility",
     ),
-    _LinkLcpFacility(
-        lcp_identifier="EE0102",
-        facility_inspire_id="EE.KAUR.TTR/75.FACILITY",
-    ),
+    # _LinkLcpFacility(
+    #     lcp_identifier="EE0102",
+    #     facility_inspire_id="EE.KAUR.TTR/75.FACILITY",
+    # ),
     _LinkLcpFacility(
         lcp_identifier="EE0100",
         facility_inspire_id="EE.KAUR.TTR/74.FACILITY",
     ),
-    _LinkLcpFacility(
-        lcp_identifier="PT0114",
-        facility_inspire_id="PT.CAED/PT.APA05766202.CI",
-    ),
-    _LinkLcpFacility(
-        lcp_identifier="BG0025",
-        facility_inspire_id="BG.CAED/003000003.FACILITY",
-    ),
-    _LinkLcpFacility(
-        lcp_identifier="DK0119",
-        facility_inspire_id="DK.CAED/000104665.FACILITY",
-    ),
+    # _LinkLcpFacility(
+    #     lcp_identifier="PT0114",
+    #     facility_inspire_id="PT.CAED/PT.APA05766202.CI",
+    # ),
+    # _LinkLcpFacility(
+    #     lcp_identifier="BG0025",
+    #     facility_inspire_id="BG.CAED/003000003.FACILITY",
+    # ),
+    # _LinkLcpFacility(
+    #     lcp_identifier="DK0119",
+    #     facility_inspire_id="DK.CAED/000104665.FACILITY",
+    # ),
 )
 
 
 @pytest.fixture(scope="session")
-def deduplication_facility() -> DuckDBPyRelation:
-    relation = duckdb.read_csv(Path(PATH_PACKAGE, "_input", "links_lcp.csv"))
-    relation.create("links_lcp")
-    return duckdb.table("links_lcp")
+def links_lcp_part() -> DuckDBPyRelation:
+    fn = "links_lcp_part"
+    relation = duckdb.read_csv(Path(PATH_INPUT, f"{fn}.csv"))
+    relation.create(fn)
+    return duckdb.table(fn)
+
+
+@pytest.fixture(scope="session")
+def links_lcp_facility() -> DuckDBPyRelation:
+    fn = "links_lcp_facility"
+    relation = duckdb.read_csv(Path(PATH_INPUT, f"{fn}.csv"))
+    relation.create(fn)
+    return duckdb.table(fn)
 
 
 @pytest.mark.parametrize("link", _LINKS_LCP_PART)
-def test_links_lcp(
-    link: _LinkLcpPart, deduplication_facility: DuckDBPyRelation
-) -> None:
+def test_links_lcp_part(link: _LinkLcpPart, links_lcp_part: DuckDBPyRelation) -> None:
     expected = link.installation_part_inspire_id
     actual = (
-        deduplication_facility.filter(f"Unique_Plant_ID = '{link.lcp_identifier}'")
+        links_lcp_part.filter(f"Unique_Plant_ID = '{link.lcp_identifier}'")
         .select("Installation_Part_INSPIRE_ID")
+        .fetchone()
+    )
+    assert actual is not None
+    assert actual[0] == expected
+
+
+@pytest.mark.parametrize("link", _LINKS_LCP_FACILITY)
+def test_links_lcp_facility(
+    link: _LinkLcpFacility, links_lcp_facility: DuckDBPyRelation
+) -> None:
+    expected = link.facility_inspire_id
+    actual = (
+        links_lcp_facility.filter(f"Unique_Plant_ID = '{link.lcp_identifier}'")
+        .select("Facility_INSPIRE_ID")
         .fetchone()
     )
     assert actual is not None

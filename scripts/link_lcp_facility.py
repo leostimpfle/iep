@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Final
 
 import duckdb
@@ -5,11 +6,12 @@ import splink
 import splink.comparison_library as cl
 
 import iep._lcp
-from iep.config import PATH_INPUT
+from iep.config import PATH_INPUT, PATH_PACKAGE
 from iep.utils import clean
 
 if __name__ == "__main__":
     connection = duckdb.connect()
+    remove = ["kraftwerk", "central termoelectrica", "central termoeletrica"]
     columns: Final[set[str]] = {
         "PlantName",
         "FacilityName",
@@ -22,7 +24,7 @@ if __name__ == "__main__":
         "Refineries",
         "OtherSector",
     }
-    lcp_links = connection.read_csv(PATH_INPUT / "links_lcp.csv")
+    lcp_links = connection.read_csv(PATH_INPUT / "links_lcp_part.csv")
     lcp = iep._lcp.load(connection=connection)
     identifiers = iep.identifiers.load(connection=connection)
     with_links = (
@@ -38,7 +40,10 @@ if __name__ == "__main__":
         )
         .select(
             f"""* REPLACE(
-                {", ".join(f"{clean(c)} AS {c}" for c in columns if c not in ("Refineries", "Longitude", "Latitude"))} 
+                {clean("PlantName", remove=["FacilityName", "Address1", "City"] + [f"'{r}'" for r in remove])} AS PlantName,
+                {clean("FacilityName", remove=["Address1", "City"] + [f"'{r}'" for r in remove])} AS FacilityName,
+                {clean("Address1", remove=["City"])} AS Address1,
+                {", ".join(f"{clean(c)} AS {c}" for c in columns if c not in ("Address1", "PlantName", "FacilityName", "Refineries", "Longitude", "Latitude"))} 
             )
             """
         )
@@ -99,12 +104,47 @@ if __name__ == "__main__":
 # linker.visualisations.match_weights_chart()
 
 # %% clustering
-threshold_match_weight = 2.0
+threshold_match_weight = -1.0
 prediction = (
-    linker.inference.predict(threshold_match_weight=threshold_match_weight)
-    .as_duckdbpyrelation()
-    .filter("Facility_INSPIRE_ID_l IS NULL OR Facility_INSPIRE_ID_r IS NULL")
+    linker.inference.predict(
+        threshold_match_weight=threshold_match_weight
+    ).as_duckdbpyrelation()
+    # .filter("Facility_INSPIRE_ID_l IS NULL OR Facility_INSPIRE_ID_r IS NULL")
 )
+result = connection.sql(
+    """WITH plant_facility_edges AS (
+        SELECT
+            CASE
+                WHEN Facility_INSPIRE_ID_l IS NULL THEN Unique_Plant_ID_l
+                ELSE Unique_Plant_ID_r
+            END AS Unique_Plant_ID,
+            CASE
+                WHEN Facility_INSPIRE_ID_l IS NULL THEN Facility_INSPIRE_ID_r
+                ELSE Facility_INSPIRE_ID_l
+            END AS Facility_INSPIRE_ID,
+            match_weight,
+            match_probability,
+        FROM prediction 
+        WHERE (Facility_INSPIRE_ID_l IS NULL) <> (Facility_INSPIRE_ID_r IS NULL)
+    )
+    SELECT
+        *
+    FROM plant_facility_edges
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY Unique_Plant_ID ORDER BY match_probability DESC
+    ) = 1
+"""
+)
+result.order("Unique_Plant_ID").to_csv(
+    Path(PATH_INPUT, "links_lcp_facility.csv").as_posix()
+)
+# connection.register(
+#     "duplicate_free_dataset", with_links.filter("Facility_INSPIRE_ID NOT NULL")
+# )
+# clusters = linker.clustering.cluster_using_single_best_links(
+#     df_predict=prediction,
+#     duplicate_free_datasets=["duplicate_free_dataset"],
+# )
 # clusters = linker.clustering.cluster_pairwise_predictions_at_threshold(
 #     df_predict=prediction, threshold_match_weight=threshold_match_weight
 # ).as_duckdbpyrelation()
@@ -119,11 +159,14 @@ prediction = (
 # )
 
 # %%
-unique_id = "DE4108"
-p = linker.inference.predict(threshold_match_weight=-10.0)
+unique_id = "EE0102"
+p = linker.inference.predict(
+    # threshold_match_weight=-20.0,
+)
+
 filtered = (
     p.as_duckdbpyrelation()
-    .filter(f"Unique_Plant_ID_r = '{unique_id}'")
+    .filter(f"Unique_Plant_ID_l = '{unique_id}'")
     .order("match_probability DESC")
     .df()
     .to_dict("records")
