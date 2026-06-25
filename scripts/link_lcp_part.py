@@ -285,20 +285,3 @@ filtered = (
     .to_dict("records")
 )
 linker.visualisations.waterfall_chart(records=filtered)
-
-
-# %%
-import iep._lcp
-
-links = duckdb.read_csv(PATH_INPUT / "links_lcp_part.csv")
-lcp = iep._lcp.load()
-d = lcp.join(
-    links.select("Unique_Plant_ID").distinct(),
-    condition="Unique_Plant_ID",
-    how="anti",
-)
-d.filter("ReferenceYear = 2015").aggregate(
-    """Unique_Plant_ID,
-    SUM(Biomass + OtherSolidFuels + LiquidFuels + NaturalGas + OtherGases) AS energyInputTJ
-    """
-).order("energyInputTJ")
