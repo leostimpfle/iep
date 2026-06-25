@@ -7,7 +7,7 @@ import splink.comparison_level_library as cll
 import splink.comparison_library as cl
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-from iep.config import PATH_PACKAGE
+from iep.config import PATH_INPUT, PATH_PACKAGE
 from iep.utils import clean
 
 
@@ -268,9 +268,7 @@ prediction.as_duckdbpyrelation().aggregate(
     FIRST(match_weight ORDER BY match_weight DESC) AS match_weight,
     FIRST(match_probability ORDER BY match_weight DESC) AS match_probability
     """
-).order("Unique_Plant_ID").to_csv(
-    Path(PATH_PACKAGE, "_input", "links_lcp.csv").as_posix()
-)
+).order("Unique_Plant_ID").to_csv(Path(PATH_INPUT, "links_lcp_part.csv").as_posix())
 
 # %%
 linker.visualisations.match_weights_chart()
@@ -291,7 +289,6 @@ linker.visualisations.waterfall_chart(records=filtered)
 
 # %%
 import iep._lcp
-from iep.config import PATH_INPUT
 
 links = duckdb.read_csv(PATH_INPUT / "links_lcp.csv")
 lcp = iep._lcp.load()

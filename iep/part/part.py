@@ -55,7 +55,7 @@ def _add_lcp(
 ) -> DuckDBPyRelation:
     import iep._lcp
 
-    lcp_links = connection.read_csv(PATH_INPUT / "links_lcp.csv")
+    lcp_links = connection.read_csv(PATH_INPUT / "links_lcp_part.csv")
     lcp_details = (
         iep._lcp.load(connection=connection, reload=reload)
         .join(lcp_links, condition="Unique_Plant_ID", how="inner")
