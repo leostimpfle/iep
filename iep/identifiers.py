@@ -5,7 +5,7 @@ import duckdb
 from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
 import iep.facility.facility
-from iep.config import NA_VALUES, PATH_IEP, VERSION
+from iep.config import NA_VALUES, PATH_IEP, PATH_INPUT, VERSION
 from iep.utils import Level, read_duckdb
 
 
@@ -46,6 +46,7 @@ def _load_site(
 
 def load(
     include_name: bool = True,
+    add_lcp: bool = True,
     case_sensitive: bool = True,
     version: str = VERSION,
     reload: bool = False,
@@ -78,6 +79,17 @@ def load(
             ),
             condition=join_key,
             how="left",
+        )
+    if add_lcp:
+        # Add mapping of LCP to Facility_INSPIRE_ID
+        data = connection.sql(
+            f"""SELECT * FROM data
+            UNION BY NAME
+            SELECT
+                Unique_Plant_ID AS Installation_Part_INSPIRE_ID,
+                Facility_INSPIRE_ID
+            FROM read_csv('{PATH_INPUT / "links_lcp_facility.csv"}') 
+            """
         )
     if not case_sensitive:
         data = data.select(f"{', '.join(f'lower({c}) AS {c}' for c in data.columns)}")
