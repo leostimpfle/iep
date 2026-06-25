@@ -470,7 +470,7 @@ def _add_lcp(data: CteQueue) -> CteQueue:
                 SUM(OtherGases) AS OtherGases
             FROM _lcp_raw
             INNER JOIN (
-                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp.csv"}')
+                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp_part.csv"}')
             ) USING (Unique_Plant_ID)
             GROUP BY ALL
             """

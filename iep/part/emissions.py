@@ -8,6 +8,7 @@ import iep.utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
+    PATH_INPUT,
     PATH_PACKAGE,
     THRESHOLD_RANGE,
     THRESHOLD_UNIT_ERROR,
@@ -87,7 +88,7 @@ def _add_lcp(data: CteQueue) -> CteQueue:
                 SUM(Dust) AS DUST
             FROM _lcp_emissions_raw
             INNER JOIN (
-                SELECT * FROM read_csv('{PATH_PACKAGE / "_input" / "links_lcp.csv"}')
+                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp_part.csv"}')
             ) USING (Unique_Plant_ID)
             GROUP BY ALL
             """
