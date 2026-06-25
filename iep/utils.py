@@ -494,7 +494,8 @@ def deduplicate(data: CteQueue, level: Level) -> CteQueue:
 
 
 def clean(column: str, remove: list[str] | None = None) -> str:
-    expression = f"lower({column})"
+    expression = f"strip_accents({column})"
+    expression = f"lower({expression})"
     expression = f"trim(regexp_replace({expression}, '[^\\w\\s]', '', 'g'))"
     for r in remove or []:
         cleaned_r = f"trim(regexp_replace(lower({r}), '[^\\w\\s]', '', 'g'))"
