@@ -9,6 +9,14 @@ from iep.utils import read_duckdb
 
 _VERSION: Final[str] = "v3.0"
 
+FUELS: Final[set[str]] = {
+    "Biomass",
+    "OtherSolidFuels",
+    "LiquidFuels",
+    "NaturalGas",
+    "OtherGases",
+}
+
 
 def load_basic_data(
     connection: DuckDBPyConnection = duckdb.default_connection(),
@@ -206,41 +214,23 @@ def load(
 ) -> DuckDBPyRelation:
     basic_data = load_basic_data(connection=connection, reload=reload)
     plants = load_plant(connection=connection, reload=reload)
-    details = load_plant_details(connection=connection, reload=reload)
-    energy_inputs = load_energy_inputs(connection=connection, reload=reload)
-    optouts = load_optouts(connection=connection, reload=reload)
-    article15 = load_lcpart15(connection=connection, reload=reload)
     data = basic_data.select("ID AS FK_BasicData_ID, ReferenceYear").join(
         plants.select("* EXCLUDE(ID), ID AS FK_Plant_ID"),
         condition="FK_BasicData_ID",
         how="left",
     )
-    data = data.join(
-        details.select(
-            f"""* EXCLUDE({", ".join([c for c in details.columns if c in data.columns and c != "FK_Plant_ID"])})"""
-        ),
-        condition="FK_Plant_ID",
-        how="left",
+    addtional_data = (
+        load_plant_details(connection=connection, reload=reload),
+        load_energy_inputs(connection=connection, reload=reload),
+        load_optouts(connection=connection, reload=reload),
+        load_lcpart15(connection=connection, reload=reload),
     )
-    data = data.join(
-        energy_inputs.select(
-            f"""* EXCLUDE({", ".join([c for c in energy_inputs.columns if c in data.columns and c != "FK_Plant_ID"])})"""
-        ),
-        condition="FK_Plant_ID",
-        how="left",
-    )
-    data = data.join(
-        optouts.select(
-            f"""* EXCLUDE({", ".join([c for c in optouts.columns if c in data.columns and c != "FK_Plant_ID"])})"""
-        ),
-        condition="FK_Plant_ID",
-        how="left",
-    )
-    data = data.join(
-        article15.select(
-            f"""* EXCLUDE({", ".join([c for c in article15.columns if c in data.columns and c != "FK_Plant_ID"])})"""
-        ),
-        condition="FK_Plant_ID",
-        how="left",
-    )
+    for additional in addtional_data:
+        data = data.join(
+            additional.select(
+                f"""* EXCLUDE({", ".join(c for c in additional.columns if c in data.columns and c != "FK_Plant_ID")})"""
+            ),
+            condition="FK_Plant_ID",
+            how="left",
+        )
     return data

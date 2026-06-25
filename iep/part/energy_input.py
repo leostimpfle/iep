@@ -461,7 +461,7 @@ def _add_lcp(data: CteQueue) -> CteQueue:
         name="_lcp_mapped",
         query=dedent(
             f"""SELECT
-                Installation_Part_INSPIRE_ID,
+                COALESCE(Installation_Part_INSPIRE_ID, Unique_Plant_ID) AS Installation_Part_INSPIRE_ID,
                 ReferenceYear AS reportingYear,
                 SUM(Biomass) AS Biomass,
                 SUM(OtherSolidFuels) AS OtherSolidFuels,
@@ -469,8 +469,8 @@ def _add_lcp(data: CteQueue) -> CteQueue:
                 SUM(NaturalGas) AS NaturalGas, 
                 SUM(OtherGases) AS OtherGases
             FROM _lcp_raw
-            INNER JOIN (
-                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp.csv"}')
+            LEFT JOIN (
+                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp_part.csv"}')
             ) USING (Unique_Plant_ID)
             GROUP BY ALL
             """

@@ -8,7 +8,7 @@ import iep.utils
 from iep.config import (
     NA_VALUES,
     PATH_IEP,
-    PATH_PACKAGE,
+    PATH_INPUT,
     THRESHOLD_RANGE,
     THRESHOLD_UNIT_ERROR,
     VERSION,
@@ -80,14 +80,14 @@ def _add_lcp(data: CteQueue) -> CteQueue:
         name="_lcp_emissions_mapped",
         query=dedent(
             f"""SELECT
-                Installation_Part_INSPIRE_ID,
+                COALESCE(Installation_Part_INSPIRE_ID, Unique_Plant_ID) AS Installation_Part_INSPIRE_ID,
                 ReferenceYear AS reportingYear,
                 SUM(NOx) AS NOX, 
                 SUM(SO2) AS SO2,
                 SUM(Dust) AS DUST
             FROM _lcp_emissions_raw
-            INNER JOIN (
-                SELECT * FROM read_csv('{PATH_PACKAGE / "_input" / "links_lcp.csv"}')
+            LEFT JOIN (
+                SELECT * FROM read_csv('{PATH_INPUT / "links_lcp_part.csv"}')
             ) USING (Unique_Plant_ID)
             GROUP BY ALL
             """
