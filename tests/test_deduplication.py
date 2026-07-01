@@ -125,6 +125,38 @@ def deduplication_lcpmapping() -> DuckDBPyRelation:
     return duckdb.table("deduplication_lcp")
 
 
+# TODO: think about duplicates
+@pytest.mark.xfail
+def test_deduplication_facility_uniqueness(
+    deduplication_facility: DuckDBPyRelation,
+) -> None:
+    duplicates = (
+        deduplication_facility.select(
+            "*, COUNT(*) OVER (PARTITION BY Facility_INSPIRE_ID) AS counts"
+        )
+        .filter("counts > 1")
+        .fetchall()
+    )
+    assert not duplicates, (
+        f"{len(duplicates)} duplicate Facility_INSPIRE_IDs:\n {duplicates[:20]}"
+    )
+
+
+def test_deduplication_lcpmapping_uniqueness(
+    deduplication_lcpmapping: DuckDBPyRelation,
+) -> None:
+    duplicates = (
+        deduplication_lcpmapping.select(
+            "*, COUNT(*) OVER (PARTITION BY Facility_INSPIRE_ID) AS counts"
+        )
+        .filter("counts > 1")
+        .fetchall()
+    )
+    assert not duplicates, (
+        f"{len(duplicates)} duplicate Facility_INSPIRE_IDs:\n {duplicates[:20]}"
+    )
+
+
 @pytest.mark.parametrize("case", _CASES_FACILITY)
 def test_deduplication_facility_inspire_id(
     case: _Case, deduplication_facility: DuckDBPyRelation

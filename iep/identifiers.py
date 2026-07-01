@@ -81,6 +81,15 @@ def load(
             how="left",
         )
     if add_lcp:
+        # Rewire Facility_INSPIRE_ID for unmapped lcpmapping
+        lcpmapping = connection.read_csv(PATH_INPUT / "deduplication_lcpmapping.csv")
+        data = data.join(
+            lcpmapping, condition="Facility_INSPIRE_ID", how="left"
+        ).select(
+            """* EXCLUDE(Facility_INSPIRE_ID_cluster) REPLACE(
+                COALESCE(Facility_INSPIRE_ID_cluster, Facility_INSPIRE_ID) AS Facility_INSPIRE_ID
+            )"""
+        )
         # Add mapping of LCP to Facility_INSPIRE_ID
         data = connection.sql(
             f"""SELECT * FROM data
