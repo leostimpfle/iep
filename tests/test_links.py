@@ -111,6 +111,32 @@ def links_lcp_facility() -> DuckDBPyRelation:
     return duckdb.table(fn)
 
 
+def test_links_lcp_facility_unique(links_lcp_facility: DuckDBPyRelation) -> None:
+    duplicates = (
+        links_lcp_facility.select(
+            "*, COUNT(*) OVER (PARTITION BY Unique_Plant_ID) AS counts"
+        )
+        .filter("counts > 1")
+        .fetchall()
+    )
+    assert not duplicates, (
+        f"{len(duplicates)} duplicate Unique_Plant_IDs:\n {duplicates[:20]}"
+    )
+
+
+def test_links_lcp_part_unique(links_lcp_part: DuckDBPyRelation) -> None:
+    duplicates = (
+        links_lcp_part.select(
+            "*, COUNT(*) OVER (PARTITION BY Unique_Plant_ID) AS counts"
+        )
+        .filter("counts > 1")
+        .fetchall()
+    )
+    assert not duplicates, (
+        f"{len(duplicates)} duplicate Unique_Plant_IDs:\n {duplicates[:20]}"
+    )
+
+
 @pytest.mark.parametrize("link", _LINKS_LCP_PART)
 def test_links_lcp_part(link: _LinkLcpPart, links_lcp_part: DuckDBPyRelation) -> None:
     expected = link.installation_part_inspire_id
